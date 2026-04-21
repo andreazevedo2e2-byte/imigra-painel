@@ -3,6 +3,8 @@ import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { stripePlatform } from '@/lib/stripe';
 
+export const dynamic = 'force-dynamic';
+
 function startOfDayUnixSeconds(daysAgo: number) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
@@ -199,4 +201,3 @@ export default async function StripePage() {
     </>
   );
 }
-

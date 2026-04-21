@@ -31,6 +31,7 @@ export function Nav() {
                 <Link
                   key={l.href}
                   href={l.href}
+                  prefetch={false}
                   className="muted"
                   style={{ fontSize: 13, padding: '6px 10px', borderRadius: 999 }}
                 >

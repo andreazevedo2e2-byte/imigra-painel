@@ -5,6 +5,8 @@ import { requireAdminSession } from '@/lib/auth';
 import { getEnv } from '@/lib/env';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 type RefundRow = {
   id: string;
   user_id: string;

@@ -4,6 +4,8 @@ import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 type LeadRow = {
   id: string;
   full_name: string | null;
@@ -78,7 +80,9 @@ export default async function LeadsPage({
                 {leads.map((l) => (
                   <tr key={l.id} style={{ borderBottom: '1px solid rgba(55,65,81,0.25)' }}>
                     <td style={{ padding: 12, fontWeight: 700 }}>
-                      <Link href={`/leads/${l.id}`}>{l.full_name || l.id.slice(0, 8)}</Link>
+                      <Link href={`/leads/${l.id}`} prefetch={false}>
+                        {l.full_name || l.id.slice(0, 8)}
+                      </Link>
                     </td>
                     <td style={{ padding: 12 }} className="muted">
                       {l.email || '—'}

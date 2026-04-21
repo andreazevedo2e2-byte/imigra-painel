@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getEnv } from '@/lib/env';
 import { requireAdminSession, setAdminSession } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

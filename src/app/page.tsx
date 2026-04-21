@@ -3,6 +3,8 @@ import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 function startOfDayIso(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);

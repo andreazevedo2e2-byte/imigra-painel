@@ -3,6 +3,8 @@ import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 async function getPayments() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase

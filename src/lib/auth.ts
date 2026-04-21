@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { unstable_noStore as noStore } from 'next/cache';
 import { cookies } from 'next/headers';
 import { getEnv } from '@/lib/env';
 
@@ -73,6 +74,7 @@ export function clearAdminSession() {
 }
 
 export async function getAdminSession() {
+  noStore();
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
