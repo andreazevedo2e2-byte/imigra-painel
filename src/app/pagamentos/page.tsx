@@ -4,94 +4,45 @@ import { Nav } from '@/components/nav';
 import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getAdminSnapshot } from '@/lib/admin-data';
 
 export const dynamic = 'force-dynamic';
 
-async function getPaymentView() {
-  const supabase = supabaseAdmin();
-  const { data: payments, error } = await supabase
-    .from('payments')
-    .select('id,user_id,amount,status,created_at,refund_requested_at,refunded_at')
-    .order('created_at', { ascending: false })
-    .limit(300);
-
-  if (error) {
-    console.error('Failed to load payments:', error);
-    return { rows: [], totals: { revenue: 0, sales: 0, refunds: 0, pending: 0 } };
-  }
-
-  const profileIds = Array.from(new Set((payments ?? []).map((payment) => payment.user_id).filter(Boolean)));
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id,full_name,email')
-    .in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']);
-
-  const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-  const completed = (payments ?? []).filter((payment) => payment.status === 'completed');
-
-  return {
-    rows: (payments ?? []).map((payment) => {
-      const profile = payment.user_id ? profilesById.get(payment.user_id) : null;
-      return {
-        id: payment.id,
-        name: profile?.full_name || 'Cliente sem nome',
-        email: profile?.email || 'Sem e-mail',
-        amount: payment.amount ?? 0,
-        status: formatBusinessStatus(payment.status),
-        createdAt: payment.created_at,
-        refundRequestedAt: payment.refund_requested_at,
-        refundedAt: payment.refunded_at,
-        userId: payment.user_id,
-      };
-    }),
-    totals: {
-      revenue: completed.reduce((sum, payment) => sum + (payment.amount ?? 0), 0),
-      sales: completed.length,
-      refunds: (payments ?? []).filter((payment) => payment.status === 'refunded').length,
-      pending: (payments ?? []).filter((payment) => payment.status === 'refund_pending').length,
-    },
-  };
-}
-
 export default async function PagamentosPage() {
-  const session = await requireAdminSession();
-  if (!session) redirect('/login');
+  const adminSession = await requireAdminSession();
+  if (!adminSession) redirect('/login');
 
-  const data = await getPaymentView();
+  const snapshot = await getAdminSnapshot();
+  const rows = snapshot.raw.payments
+    .slice()
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
 
   return (
     <>
       <Nav current="payments" />
       <div className="container stack">
-        <div className="card highlight-panel">
-          <div className="eyebrow">Pagamentos</div>
-          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
-            Vendas, situacao do cliente e pedidos de reembolso num lugar so.
-          </h1>
-          <p className="muted" style={{ marginTop: 14, maxWidth: 720, fontSize: 17 }}>
-            Aqui voce acompanha o que entrou, o que ainda esta em analise e quais clientes podem
-            precisar de uma acao manual.
-          </p>
+        <div className="card">
+          <div className="section-title" style={{ marginBottom: 10 }}>Pagamentos</div>
+          <div className="muted">Fonte de verdade: tabela payments do Supabase.</div>
         </div>
 
         <div className="grid">
           <div className="col-3">
-            <StatCard label="Faturamento acumulado" value={formatCurrencyBRL(data.totals.revenue / 100)} />
+            <StatCard label="Vendas concluidas" value={String(snapshot.metrics.completedSales)} />
           </div>
           <div className="col-3">
-            <StatCard label="Vendas confirmadas" value={String(data.totals.sales)} />
+            <StatCard label="Receita bruta" value={formatCurrencyBRL(snapshot.metrics.revenueBrutaCents / 100)} />
           </div>
           <div className="col-3">
-            <StatCard label="Reembolsos concluidos" value={String(data.totals.refunds)} />
+            <StatCard label="Refund pendente" value={String(snapshot.metrics.refundPendingCount)} />
           </div>
           <div className="col-3">
-            <StatCard label="Reembolsos em analise" value={String(data.totals.pending)} />
+            <StatCard label="Reembolsos concluidos" value={String(snapshot.metrics.refundProcessedCount)} />
           </div>
         </div>
 
         <div className="card">
-          <div className="section-title">Lista de pagamentos</div>
+          <div className="section-title">Lista</div>
           <div className="table-shell">
             <table className="table">
               <thead>
@@ -99,41 +50,42 @@ export default async function PagamentosPage() {
                   <th>Cliente</th>
                   <th>Contato</th>
                   <th>Valor</th>
-                  <th>Situacao</th>
-                  <th>Data da compra</th>
+                  <th>Status</th>
+                  <th>Compra</th>
                   <th>Reembolso</th>
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      {row.userId ? (
-                        <Link href={`/leads/${row.userId}`} prefetch={false}>
-                          {row.name}
-                        </Link>
-                      ) : (
-                        row.name
-                      )}
-                    </td>
-                    <td className="muted">{row.email}</td>
-                    <td>{formatCurrencyBRL(row.amount / 100)}</td>
-                    <td>{row.status}</td>
-                    <td className="muted">{formatDateTime(row.createdAt)}</td>
-                    <td className="muted">
-                      {row.refundedAt
-                        ? `Concluido em ${formatDateTime(row.refundedAt)}`
-                        : row.refundRequestedAt
-                          ? `Pedido em ${formatDateTime(row.refundRequestedAt)}`
-                          : 'Sem pedido'}
-                    </td>
-                  </tr>
-                ))}
-                {data.rows.length === 0 ? (
+                {rows.map((payment) => {
+                  const profile = payment.user_id ? snapshot.raw.profileById.get(payment.user_id) : null;
+                  return (
+                    <tr key={payment.id}>
+                      <td>
+                        {payment.user_id ? (
+                          <Link href={`/leads/${payment.user_id}`} prefetch={false}>
+                            {profile?.full_name || 'Cliente sem nome'}
+                          </Link>
+                        ) : (
+                          profile?.full_name || 'Cliente sem nome'
+                        )}
+                      </td>
+                      <td className="muted">{profile?.email || 'Sem e-mail'}</td>
+                      <td>{formatCurrencyBRL((payment.amount ?? 0) / 100)}</td>
+                      <td>{formatBusinessStatus(payment.status)}</td>
+                      <td className="muted">{formatDateTime(payment.created_at)}</td>
+                      <td className="muted">
+                        {payment.refunded_at
+                          ? `Concluido em ${formatDateTime(payment.refunded_at)}`
+                          : payment.refund_requested_at
+                            ? `Pedido em ${formatDateTime(payment.refund_requested_at)}`
+                            : 'Sem pedido'}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="muted">
-                      Ainda nao ha pagamentos salvos.
-                    </td>
+                    <td colSpan={6} className="muted">Nenhum pagamento encontrado.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -144,4 +96,3 @@ export default async function PagamentosPage() {
     </>
   );
 }
-

@@ -1,14 +1,26 @@
 import Stripe from 'stripe';
 import Link from 'next/link';
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
+import { getPaymentConnectedAccountId, updateUserAccessFlag } from '@/lib/admin-data';
 import { getEnv } from '@/lib/env';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+
+function isNextRedirectError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'digest' in error &&
+    typeof (error as { digest?: unknown }).digest === 'string' &&
+    (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+  );
+}
 
 function saoPauloDateKey(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -17,23 +29,25 @@ function saoPauloDateKey(date: Date) {
     month: '2-digit',
     day: '2-digit',
   }).formatToParts(date);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '00';
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 function daysDiffCalendarSaoPaulo(from: Date, to: Date) {
-  const a = saoPauloDateKey(from);
-  const b = saoPauloDateKey(to);
-  const aMs = Date.parse(a + 'T00:00:00Z');
-  const bMs = Date.parse(b + 'T00:00:00Z');
-  return Math.floor((bMs - aMs) / (1000 * 60 * 60 * 24));
+  const a = Date.parse(`${saoPauloDateKey(from)}T00:00:00Z`);
+  const b = Date.parse(`${saoPauloDateKey(to)}T00:00:00Z`);
+  return Math.floor((b - a) / (1000 * 60 * 60 * 24));
+}
+
+function buildFeedbackUrl(message: string, type: 'success' | 'error') {
+  return `/reembolsos?${type}=${encodeURIComponent(message)}`;
 }
 
 async function getRefundQueue() {
   const supabase = supabaseAdmin();
   const { data: refundRequests, error } = await supabase
     .from('refund_requests')
-    .select('id,user_id,payment_id,stripe_payment_intent_id,stripe_refund_id,reason,status,created_at')
+    .select('*')
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -47,10 +61,7 @@ async function getRefundQueue() {
 
   const [paymentsRes, profilesRes] = await Promise.all([
     paymentIds.length
-      ? supabase
-          .from('payments')
-          .select('id,user_id,amount,status,created_at,stripe_payment_intent_id')
-          .in('id', paymentIds)
+      ? supabase.from('payments').select('*').in('id', paymentIds)
       : Promise.resolve({ data: [], error: null }),
     userIds.length
       ? supabase.from('profiles').select('id,full_name,email').in('id', userIds)
@@ -65,6 +76,12 @@ async function getRefundQueue() {
     const profile = row.user_id ? profilesById.get(row.user_id) : null;
     const purchaseDate = payment?.created_at ? new Date(payment.created_at) : null;
     const ageDays = purchaseDate ? daysDiffCalendarSaoPaulo(purchaseDate, new Date()) : null;
+    const rawStatus =
+      payment?.status === 'refunded'
+        ? 'processed'
+        : payment?.status === 'refund_pending'
+          ? 'processing'
+          : row.status;
 
     return {
       id: row.id,
@@ -72,21 +89,21 @@ async function getRefundQueue() {
       customerName: profile?.full_name || 'Cliente sem nome',
       customerEmail: profile?.email || 'Sem e-mail',
       amount: payment?.amount ?? 0,
-      status: formatBusinessStatus(row.status),
-      createdAt: row.created_at,
+      status: formatBusinessStatus(rawStatus),
       purchaseDate: payment?.created_at ?? null,
       ageDays,
       isLate: typeof ageDays === 'number' ? ageDays > 7 : false,
       reason: row.reason || null,
-      paymentIntentId: row.stripe_payment_intent_id ?? payment?.stripe_payment_intent_id ?? null,
-      rawStatus: row.status,
+      rawStatus,
+      paymentStatus: payment?.status ?? null,
+      errorMessage: row.error_message || null,
     };
   });
 
   return {
     rows,
     totals: {
-      pending: rows.filter((row) => row.rawStatus === 'pending').length,
+      pending: rows.filter((row) => row.rawStatus === 'pending' || row.rawStatus === 'processing').length,
       approved: rows.filter((row) => row.rawStatus === 'processed').length,
       failed: rows.filter((row) => row.rawStatus === 'failed').length,
     },
@@ -100,98 +117,194 @@ async function approveRefund(formData: FormData) {
   if (!session) redirect('/login');
 
   const refundRequestId = String(formData.get('refund_request_id') ?? '').trim();
-  if (!refundRequestId) redirect('/reembolsos');
+  if (!refundRequestId) redirect(buildFeedbackUrl('Pedido de reembolso invalido.', 'error'));
 
   const env = getEnv();
   const supabase = supabaseAdmin();
-  const { data: refundRequest } = await supabase
-    .from('refund_requests')
-    .select('*')
-    .eq('id', refundRequestId)
-    .maybeSingle();
 
-  if (!refundRequest) redirect('/reembolsos');
+  let paymentId: string | null = null;
 
-  let payment = null;
-  if (refundRequest.payment_id) {
-    const { data } = await supabase.from('payments').select('*').eq('id', refundRequest.payment_id).maybeSingle();
-    payment = data;
-  }
+  try {
+    const { data: refundRequest } = await supabase
+      .from('refund_requests')
+      .select('*')
+      .eq('id', refundRequestId)
+      .maybeSingle();
 
-  const paymentCreatedAt = payment?.created_at ? new Date(payment.created_at) : null;
-  if (!paymentCreatedAt) {
-    throw new Error('Nao foi possivel localizar a data da compra para validar o prazo de reembolso.');
-  }
+    if (!refundRequest) {
+      redirect(buildFeedbackUrl('Pedido de reembolso nao encontrado.', 'error'));
+    }
 
-  const diffDays = daysDiffCalendarSaoPaulo(paymentCreatedAt, new Date());
-  if (diffDays > 7) {
-    throw new Error('Este pedido passou do prazo de 7 dias corridos no calendario.');
-  }
+    if (refundRequest.status === 'processed') {
+      redirect(buildFeedbackUrl('Este reembolso ja foi concluido.', 'success'));
+    }
 
-  const paymentIntentId =
-    payment?.stripe_payment_intent_id ?? refundRequest.stripe_payment_intent_id ?? null;
-  if (!paymentIntentId) {
-    throw new Error('Nao foi encontrado o pagamento para realizar o reembolso.');
-  }
+    const { data: payment } = refundRequest.payment_id
+      ? await supabase.from('payments').select('*').eq('id', refundRequest.payment_id).maybeSingle()
+      : { data: null };
 
-  const stripe = new Stripe(env.STRIPE_SECRET_KEY);
-  const refund = await stripe.refunds.create(
-    { payment_intent: paymentIntentId },
-    { stripeAccount: env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID }
-  );
+    if (!payment) {
+      await supabase
+        .from('refund_requests')
+        .update({ status: 'failed', error_message: 'Pagamento vinculado nao encontrado.' })
+        .eq('id', refundRequestId);
+      redirect(buildFeedbackUrl('Pagamento vinculado nao encontrado.', 'error'));
+    }
 
-  await supabase
-    .from('refund_requests')
-    .update({ status: 'processing', stripe_refund_id: refund.id })
-    .eq('id', refundRequestId);
+    paymentId = payment.id;
 
-  if (payment?.id) {
+    if (payment.status === 'refunded') {
+      await supabase
+        .from('refund_requests')
+        .update({
+          status: 'processed',
+          processed_at: new Date().toISOString(),
+          stripe_refund_id: refundRequest.stripe_refund_id ?? payment.stripe_refund_id ?? null,
+        })
+        .eq('id', refundRequestId);
+      await updateUserAccessFlag(payment.user_id);
+      redirect(buildFeedbackUrl('Pagamento ja estava reembolsado e foi reconciliado.', 'success'));
+    }
+
+    if (refundRequest.status === 'processing' || payment.status === 'refund_pending') {
+      redirect(buildFeedbackUrl('Este reembolso ja esta em processamento.', 'success'));
+    }
+
+    const paymentCreatedAt = payment.created_at ? new Date(payment.created_at) : null;
+    if (!paymentCreatedAt) {
+      await supabase
+        .from('refund_requests')
+        .update({ status: 'failed', error_message: 'Data do pagamento invalida.' })
+        .eq('id', refundRequestId);
+      redirect(buildFeedbackUrl('Data do pagamento invalida.', 'error'));
+    }
+
+    if (daysDiffCalendarSaoPaulo(paymentCreatedAt, new Date()) > 7) {
+      await supabase
+        .from('refund_requests')
+        .update({ status: 'failed', error_message: 'Prazo de 7 dias expirado.' })
+        .eq('id', refundRequestId);
+      redirect(buildFeedbackUrl('Pedido fora do prazo de 7 dias.', 'error'));
+    }
+
+    const paymentIntentId =
+      payment.stripe_payment_intent_id ?? refundRequest.stripe_payment_intent_id ?? null;
+    if (!paymentIntentId) {
+      await supabase
+        .from('refund_requests')
+        .update({ status: 'failed', error_message: 'Pagamento sem payment intent.' })
+        .eq('id', refundRequestId);
+      redirect(buildFeedbackUrl('Pagamento sem identificador Stripe.', 'error'));
+    }
+
+    await supabase
+      .from('refund_requests')
+      .update({ status: 'processing', error_message: null })
+      .eq('id', refundRequestId);
+
     await supabase.from('payments').update({ status: 'refund_pending' }).eq('id', payment.id);
-  }
 
-  if (payment?.user_id) {
-    await supabase.from('profiles').update({ has_paid: false }).eq('id', payment.user_id);
-    await supabase.auth.admin.updateUserById(payment.user_id, { user_metadata: { has_paid: false } });
-  }
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+    const refund = await stripe.refunds.create(
+      { payment_intent: paymentIntentId },
+      { stripeAccount: getPaymentConnectedAccountId(payment) }
+    );
 
-  redirect('/reembolsos');
+    if (refund.status === 'succeeded') {
+      await supabase
+        .from('payments')
+        .update({
+          status: 'refunded',
+          refunded_at: new Date().toISOString(),
+          stripe_refund_id: refund.id,
+        })
+        .eq('id', payment.id);
+
+      await supabase
+        .from('refund_requests')
+        .update({
+          status: 'processed',
+          stripe_refund_id: refund.id,
+          processed_at: new Date().toISOString(),
+          error_message: null,
+        })
+        .eq('id', refundRequestId);
+
+      await updateUserAccessFlag(payment.user_id);
+    } else {
+      await supabase
+        .from('refund_requests')
+        .update({
+          status: 'processing',
+          stripe_refund_id: refund.id,
+          error_message: null,
+        })
+        .eq('id', refundRequestId);
+    }
+
+    revalidatePath('/');
+    revalidatePath('/clientes');
+    revalidatePath('/leads');
+    revalidatePath('/pagamentos');
+    revalidatePath('/reembolsos');
+    revalidatePath(`/leads/${payment.user_id}`);
+
+    redirect(buildFeedbackUrl('Reembolso enviado para a Stripe.', 'success'));
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+
+    const message = error instanceof Error ? error.message : 'Erro interno ao aprovar reembolso.';
+    await supabase
+      .from('refund_requests')
+      .update({ status: 'failed', error_message: message })
+      .eq('id', refundRequestId);
+
+    if (paymentId) {
+      await supabase.from('payments').update({ status: 'completed' }).eq('id', paymentId);
+    }
+
+    revalidatePath('/reembolsos');
+    redirect(buildFeedbackUrl(message, 'error'));
+  }
 }
 
-export default async function ReembolsosPage() {
+export default async function ReembolsosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
   const session = await requireAdminSession();
   if (!session) redirect('/login');
 
+  const sp = await searchParams;
   const data = await getRefundQueue();
 
   return (
     <>
       <Nav current="refunds" />
       <div className="container stack">
-        <div className="card highlight-panel">
-          <div className="eyebrow">Reembolsos</div>
-          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
-            Controle quem pediu devolucao e o que ainda pode ser aprovado.
-          </h1>
-          <p className="muted" style={{ marginTop: 14, maxWidth: 740, fontSize: 17 }}>
-            O painel calcula automaticamente a idade da compra em dias de calendario para evitar
-            aprovar pedidos fora da janela de 7 dias.
-          </p>
+        <div className="card">
+          <div className="section-title" style={{ marginBottom: 10 }}>Reembolsos</div>
+          <div className="muted">A fila abaixo usa o Supabase como fonte de verdade.</div>
         </div>
+
+        {sp.success ? <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
+        {sp.error ? <div className="card" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
 
         <div className="grid">
           <div className="col-4">
-            <StatCard label="Aguardando analise" value={String(data.totals.pending)} />
+            <StatCard label="Pendentes" value={String(data.totals.pending)} />
           </div>
           <div className="col-4">
-            <StatCard label="Reembolsos concluidos" value={String(data.totals.approved)} />
+            <StatCard label="Concluidos" value={String(data.totals.approved)} />
           </div>
           <div className="col-4">
-            <StatCard label="Pedidos com falha" value={String(data.totals.failed)} />
+            <StatCard label="Falharam" value={String(data.totals.failed)} />
           </div>
         </div>
 
         <div className="card">
-          <div className="section-title">Fila de reembolso</div>
+          <div className="section-title">Fila</div>
           <div className="table-shell">
             <table className="table">
               <thead>
@@ -209,15 +322,7 @@ export default async function ReembolsosPage() {
               <tbody>
                 {data.rows.map((row) => (
                   <tr key={row.id}>
-                    <td>
-                      {row.leadId ? (
-                        <Link href={`/leads/${row.leadId}`} prefetch={false}>
-                          {row.customerName}
-                        </Link>
-                      ) : (
-                        row.customerName
-                      )}
-                    </td>
+                    <td>{row.leadId ? <Link href={`/leads/${row.leadId}`} prefetch={false}>{row.customerName}</Link> : row.customerName}</td>
                     <td className="muted">{row.customerEmail}</td>
                     <td>{formatCurrencyBRL(row.amount / 100)}</td>
                     <td>{row.status}</td>
@@ -226,13 +331,13 @@ export default async function ReembolsosPage() {
                       {row.ageDays === null ? (
                         <span className="pill warn">Sem data</span>
                       ) : row.isLate ? (
-                        <span className="pill danger">{row.ageDays} dias - fora do prazo</span>
+                        <span className="pill danger">{row.ageDays} dias</span>
                       ) : (
-                        <span className="pill success">{row.ageDays} dias - dentro do prazo</span>
+                        <span className="pill success">{row.ageDays} dias</span>
                       )}
                     </td>
                     <td className="muted" style={{ maxWidth: 320 }}>
-                      {row.reason || 'Sem motivo informado'}
+                      {row.errorMessage ? `${row.reason || 'Sem motivo'} | Erro: ${row.errorMessage}` : row.reason || 'Sem motivo informado'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <form action={approveRefund}>
@@ -251,9 +356,7 @@ export default async function ReembolsosPage() {
                 ))}
                 {data.rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="muted">
-                      Ainda nao existem pedidos de reembolso cadastrados.
-                    </td>
+                    <td colSpan={8} className="muted">Nenhum pedido de reembolso cadastrado.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -264,4 +367,3 @@ export default async function ReembolsosPage() {
     </>
   );
 }
-
