@@ -1,31 +1,14 @@
 import Stripe from 'stripe';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
+import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
+import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
 import { getEnv } from '@/lib/env';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
-
-type RefundRow = {
-  id: string;
-  user_id: string;
-  payment_id: string | null;
-  stripe_payment_intent_id: string | null;
-  stripe_refund_id: string | null;
-  reason: string | null;
-  status: string;
-  created_at: string;
-};
-
-type PaymentRow = {
-  id: string;
-  created_at: string | null;
-  amount: number | null;
-  status: string | null;
-  stripe_payment_intent_id: string | null;
-  user_id: string | null;
-};
 
 function saoPauloDateKey(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -35,11 +18,10 @@ function saoPauloDateKey(date: Date) {
     day: '2-digit',
   }).formatToParts(date);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
-  return `${get('year')}-${get('month')}-${get('day')}`; // YYYY-MM-DD
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 function daysDiffCalendarSaoPaulo(from: Date, to: Date) {
-  // "Ate o 7o dia do calendario" => compare calendar dates in Sao Paulo TZ.
   const a = saoPauloDateKey(from);
   const b = saoPauloDateKey(to);
   const aMs = Date.parse(a + 'T00:00:00Z');
@@ -51,34 +33,64 @@ async function getRefundQueue() {
   const supabase = supabaseAdmin();
   const { data: refundRequests, error } = await supabase
     .from('refund_requests')
-    .select(
-      'id,user_id,payment_id,stripe_payment_intent_id,stripe_refund_id,reason,status,created_at'
-    )
+    .select('id,user_id,payment_id,stripe_payment_intent_id,stripe_refund_id,reason,status,created_at')
     .order('created_at', { ascending: false })
     .limit(200);
+
   if (error) {
     console.error('Failed to load refund_requests:', error);
-    return { rows: [] as RefundRow[], paymentsById: new Map<string, PaymentRow>() };
+    return { rows: [], totals: { pending: 0, approved: 0, failed: 0 } };
   }
 
-  const paymentIds = (refundRequests ?? [])
-    .map((r: any) => r.payment_id)
-    .filter(Boolean) as string[];
+  const paymentIds = (refundRequests ?? []).map((row) => row.payment_id).filter(Boolean);
+  const userIds = (refundRequests ?? []).map((row) => row.user_id).filter(Boolean);
 
-  const paymentsById = new Map<string, PaymentRow>();
-  if (paymentIds.length) {
-    const { data: payments, error: payErr } = await supabase
-      .from('payments')
-      .select('id,created_at,amount,status,stripe_payment_intent_id,user_id')
-      .in('id', paymentIds);
-    if (payErr) {
-      console.error('Failed to load payments for refund queue:', payErr);
-    } else {
-      for (const p of payments ?? []) paymentsById.set((p as any).id, p as any);
-    }
-  }
+  const [paymentsRes, profilesRes] = await Promise.all([
+    paymentIds.length
+      ? supabase
+          .from('payments')
+          .select('id,user_id,amount,status,created_at,stripe_payment_intent_id')
+          .in('id', paymentIds)
+      : Promise.resolve({ data: [], error: null }),
+    userIds.length
+      ? supabase.from('profiles').select('id,full_name,email').in('id', userIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
-  return { rows: (refundRequests ?? []) as RefundRow[], paymentsById };
+  const paymentsById = new Map((paymentsRes.data ?? []).map((payment) => [payment.id, payment]));
+  const profilesById = new Map((profilesRes.data ?? []).map((profile) => [profile.id, profile]));
+
+  const rows = (refundRequests ?? []).map((row) => {
+    const payment = row.payment_id ? paymentsById.get(row.payment_id) : null;
+    const profile = row.user_id ? profilesById.get(row.user_id) : null;
+    const purchaseDate = payment?.created_at ? new Date(payment.created_at) : null;
+    const ageDays = purchaseDate ? daysDiffCalendarSaoPaulo(purchaseDate, new Date()) : null;
+
+    return {
+      id: row.id,
+      leadId: row.user_id,
+      customerName: profile?.full_name || 'Cliente sem nome',
+      customerEmail: profile?.email || 'Sem e-mail',
+      amount: payment?.amount ?? 0,
+      status: formatBusinessStatus(row.status),
+      createdAt: row.created_at,
+      purchaseDate: payment?.created_at ?? null,
+      ageDays,
+      isLate: typeof ageDays === 'number' ? ageDays > 7 : false,
+      reason: row.reason || null,
+      paymentIntentId: row.stripe_payment_intent_id ?? payment?.stripe_payment_intent_id ?? null,
+      rawStatus: row.status,
+    };
+  });
+
+  return {
+    rows,
+    totals: {
+      pending: rows.filter((row) => row.rawStatus === 'pending').length,
+      approved: rows.filter((row) => row.rawStatus === 'processed').length,
+      failed: rows.filter((row) => row.rawStatus === 'failed').length,
+    },
+  };
 }
 
 async function approveRefund(formData: FormData) {
@@ -91,60 +103,43 @@ async function approveRefund(formData: FormData) {
   if (!refundRequestId) redirect('/reembolsos');
 
   const env = getEnv();
-  // Stripe env vars are mandatory in this project (validated in getEnv()).
-
   const supabase = supabaseAdmin();
-  const { data: rr, error: rrErr } = await supabase
+  const { data: refundRequest } = await supabase
     .from('refund_requests')
     .select('*')
     .eq('id', refundRequestId)
     .maybeSingle();
-  if (rrErr || !rr) {
-    console.error('Failed to load refund request:', rrErr);
-    redirect('/reembolsos');
-  }
 
-  const paymentId = (rr as any).payment_id as string | null;
-  const stripePaymentIntentId =
-    ((rr as any).stripe_payment_intent_id as string | null) ?? null;
+  if (!refundRequest) redirect('/reembolsos');
 
-  let payment: any = null;
-  if (paymentId) {
-    const { data: p } = await supabase.from('payments').select('*').eq('id', paymentId).maybeSingle();
-    payment = p;
-  } else if (stripePaymentIntentId) {
-    const { data: p } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('stripe_payment_intent_id', stripePaymentIntentId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    payment = p;
+  let payment = null;
+  if (refundRequest.payment_id) {
+    const { data } = await supabase.from('payments').select('*').eq('id', refundRequest.payment_id).maybeSingle();
+    payment = data;
   }
 
   const paymentCreatedAt = payment?.created_at ? new Date(payment.created_at) : null;
   if (!paymentCreatedAt) {
-    throw new Error('Payment not found or missing created_at; cannot validate 7-day policy.');
+    throw new Error('Nao foi possivel localizar a data da compra para validar o prazo de reembolso.');
   }
 
   const diffDays = daysDiffCalendarSaoPaulo(paymentCreatedAt, new Date());
   if (diffDays > 7) {
-    throw new Error(`Refund blocked: purchase is ${diffDays} days old (policy is up to 7 calendar days).`);
+    throw new Error('Este pedido passou do prazo de 7 dias corridos no calendario.');
   }
 
-  const pi = (payment?.stripe_payment_intent_id ?? stripePaymentIntentId) as string | null;
-  if (!pi) {
-    throw new Error('Missing stripe_payment_intent_id; cannot create refund in Stripe.');
+  const paymentIntentId =
+    payment?.stripe_payment_intent_id ?? refundRequest.stripe_payment_intent_id ?? null;
+  if (!paymentIntentId) {
+    throw new Error('Nao foi encontrado o pagamento para realizar o reembolso.');
   }
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY);
   const refund = await stripe.refunds.create(
-    { payment_intent: pi },
+    { payment_intent: paymentIntentId },
     { stripeAccount: env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID }
   );
 
-  // Mark as processing; webhook can finalize to processed/succeeded.
   await supabase
     .from('refund_requests')
     .update({ status: 'processing', stripe_refund_id: refund.id })
@@ -154,7 +149,6 @@ async function approveRefund(formData: FormData) {
     await supabase.from('payments').update({ status: 'refund_pending' }).eq('id', payment.id);
   }
 
-  // Optional: revoke access immediately.
   if (payment?.user_id) {
     await supabase.from('profiles').update({ has_paid: false }).eq('id', payment.user_id);
     await supabase.auth.admin.updateUserById(payment.user_id, { user_metadata: { has_paid: false } });
@@ -167,94 +161,101 @@ export default async function ReembolsosPage() {
   const session = await requireAdminSession();
   if (!session) redirect('/login');
 
-  const { rows, paymentsById } = await getRefundQueue();
-  const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+  const data = await getRefundQueue();
 
   return (
     <>
-      <Nav />
-      <div className="container">
-        <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.2 }}>Reembolsos</h1>
-        <p className="muted" style={{ marginTop: 8 }}>
-          Lista de solicitacoes (refund_requests). Aprovar reembolso usa Stripe direct charge (stripeAccount: acct_...).
-        </p>
+      <Nav current="refunds" />
+      <div className="container stack">
+        <div className="card highlight-panel">
+          <div className="eyebrow">Reembolsos</div>
+          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
+            Controle quem pediu devolucao e o que ainda pode ser aprovado.
+          </h1>
+          <p className="muted" style={{ marginTop: 14, maxWidth: 740, fontSize: 17 }}>
+            O painel calcula automaticamente a idade da compra em dias de calendario para evitar
+            aprovar pedidos fora da janela de 7 dias.
+          </p>
+        </div>
 
-        <div className="card" style={{ marginTop: 16, padding: 0, overflow: 'hidden' }}>
-          <div style={{ width: '100%', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="grid">
+          <div className="col-4">
+            <StatCard label="Aguardando analise" value={String(data.totals.pending)} />
+          </div>
+          <div className="col-4">
+            <StatCard label="Reembolsos concluidos" value={String(data.totals.approved)} />
+          </div>
+          <div className="col-4">
+            <StatCard label="Pedidos com falha" value={String(data.totals.failed)} />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="section-title">Fila de reembolso</div>
+          <div className="table-shell">
+            <table className="table">
               <thead>
-                <tr style={{ textAlign: 'left', fontSize: 12, color: 'rgba(209,213,219,0.75)' }}>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Solicitado</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Compra</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Dias</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Valor</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Status</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }} />
+                <tr>
+                  <th>Cliente</th>
+                  <th>Contato</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                  <th>Compra</th>
+                  <th>Prazo</th>
+                  <th>Motivo</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const payment = r.payment_id ? paymentsById.get(r.payment_id) : undefined;
-                  const purchaseDate = payment?.created_at ? new Date(payment.created_at) : null;
-                  const days = purchaseDate ? daysDiffCalendarSaoPaulo(purchaseDate, new Date()) : null;
-                  const blocked = typeof days === 'number' ? days > 7 : false;
-
-                  return (
-                    <tr key={r.id} style={{ borderBottom: '1px solid rgba(55,65,81,0.25)' }}>
-                      <td style={{ padding: 12 }} className="muted">
-                        {new Date(r.created_at).toLocaleString('pt-BR')}
-                      </td>
-                      <td style={{ padding: 12 }} className="muted">
-                        {purchaseDate ? purchaseDate.toLocaleString('pt-BR') : '—'}
-                      </td>
-                      <td style={{ padding: 12 }}>
-                        {days === null ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <span
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 900,
-                              background: blocked ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.15)',
-                              border: `1px solid ${blocked ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.3)'}`,
-                              color: blocked ? 'rgb(252,165,165)' : 'rgb(134,239,172)',
-                            }}
-                          >
-                            {days}d
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: 12 }}>
-                        {payment?.amount != null ? brl.format(payment.amount / 100) : '—'}
-                      </td>
-                      <td style={{ padding: 12 }} className="muted">
-                        {r.status}
-                      </td>
-                      <td style={{ padding: 12, textAlign: 'right' }}>
-                        <form action={approveRefund}>
-                          <input type="hidden" name="refund_request_id" value={r.id} />
-                          <button
-                            className="btn btn-primary"
-                            type="submit"
-                            disabled={blocked || r.status !== 'pending'}
-                            style={{ opacity: blocked || r.status !== 'pending' ? 0.5 : 1 }}
-                          >
-                            Aprovar
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && (
-                  <tr>
-                    <td style={{ padding: 12 }} className="muted" colSpan={6}>
-                      Nenhuma solicitacao encontrada.
+                {data.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      {row.leadId ? (
+                        <Link href={`/leads/${row.leadId}`} prefetch={false}>
+                          {row.customerName}
+                        </Link>
+                      ) : (
+                        row.customerName
+                      )}
+                    </td>
+                    <td className="muted">{row.customerEmail}</td>
+                    <td>{formatCurrencyBRL(row.amount / 100)}</td>
+                    <td>{row.status}</td>
+                    <td className="muted">{formatDateTime(row.purchaseDate)}</td>
+                    <td>
+                      {row.ageDays === null ? (
+                        <span className="pill warn">Sem data</span>
+                      ) : row.isLate ? (
+                        <span className="pill danger">{row.ageDays} dias - fora do prazo</span>
+                      ) : (
+                        <span className="pill success">{row.ageDays} dias - dentro do prazo</span>
+                      )}
+                    </td>
+                    <td className="muted" style={{ maxWidth: 320 }}>
+                      {row.reason || 'Sem motivo informado'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <form action={approveRefund}>
+                        <input type="hidden" name="refund_request_id" value={row.id} />
+                        <button
+                          className="btn btn-primary"
+                          type="submit"
+                          disabled={row.isLate || row.rawStatus !== 'pending'}
+                          style={{ opacity: row.isLate || row.rawStatus !== 'pending' ? 0.45 : 1 }}
+                        >
+                          Aprovar
+                        </button>
+                      </form>
                     </td>
                   </tr>
-                )}
+                ))}
+                {data.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="muted">
+                      Ainda nao existem pedidos de reembolso cadastrados.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -263,3 +264,4 @@ export default async function ReembolsosPage() {
     </>
   );
 }
+

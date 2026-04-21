@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { clearAdminSession } from '@/lib/auth';
 
-export function Nav() {
+type NavProps = {
+  current: 'dashboard' | 'leads' | 'payments' | 'refunds' | 'stripe';
+};
+
+export function Nav({ current }: NavProps) {
   async function logout() {
     'use server';
     await clearAdminSession();
@@ -10,46 +14,38 @@ export function Nav() {
   }
 
   const links = [
-    { href: '/', label: 'Dashboard' },
-    { href: '/leads', label: 'Leads' },
-    { href: '/pagamentos', label: 'Pagamentos' },
-    { href: '/reembolsos', label: 'Reembolsos' },
-    { href: '/stripe', label: 'Stripe' },
-  ];
+    { href: '/', label: 'Dashboard', key: 'dashboard' },
+    { href: '/leads', label: 'Clientes', key: 'leads' },
+    { href: '/pagamentos', label: 'Pagamentos', key: 'payments' },
+    { href: '/reembolsos', label: 'Reembolsos', key: 'refunds' },
+    { href: '/stripe', label: 'Vendas', key: 'stripe' },
+  ] as const;
 
   return (
-    <div
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        backdropFilter: 'blur(12px)',
-        background: 'rgba(6, 8, 18, 0.75)',
-        borderBottom: '1px solid rgba(55, 65, 81, 0.5)',
-      }}
-    >
-      <div className="container" style={{ paddingTop: 14, paddingBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <Link href="/" prefetch={false} style={{ fontWeight: 900, letterSpacing: -0.2 }}>
+    <div className="nav-shell">
+      <div className="container" style={{ paddingTop: 16, paddingBottom: 16 }}>
+        <div className="nav-inner">
+          <div className="nav-left">
+            <Link href="/" prefetch={false} className="brand">
               Imigra Painel
             </Link>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {links.map((l) => (
+            <div className="nav-links">
+              {links.map((link) => (
                 <Link
-                  key={l.href}
-                  href={l.href}
+                  key={link.href}
+                  href={link.href}
                   prefetch={false}
-                  className="muted"
-                  style={{ fontSize: 13, padding: '6px 10px', borderRadius: 999 }}
+                  aria-current={current === link.key ? 'page' : undefined}
+                  className={`nav-link ${current === link.key ? 'active' : ''}`}
                 >
-                  {l.label}
+                  {link.label}
                 </Link>
               ))}
             </div>
           </div>
+
           <form action={logout}>
-            <button type="submit" className="btn btn-ghost" style={{ fontSize: 13 }}>
+            <button type="submit" className="btn btn-ghost">
               Sair
             </button>
           </form>

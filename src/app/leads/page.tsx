@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
+import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
+import { formatDateTime } from '@/lib/admin-presenters';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +22,7 @@ async function getLeads(q: string | null) {
     .from('profiles')
     .select('id,full_name,email,has_paid,created_at')
     .order('created_at', { ascending: false })
-    .limit(200);
+    .limit(300);
 
   if (q && q.trim()) {
     const needle = q.trim();
@@ -45,75 +47,100 @@ export default async function LeadsPage({
 
   const sp = await searchParams;
   const leads = await getLeads(sp.q ?? null);
+  const paidCount = leads.filter((lead) => lead.has_paid).length;
 
   return (
     <>
-      <Nav />
-      <div className="container">
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.2 }}>Leads</h1>
-            <p className="muted" style={{ marginTop: 8 }}>
-              Clique para ver detalhes (respostas, pagamentos, reembolsos).
-            </p>
-          </div>
-          <form style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input className="input" name="q" placeholder="Buscar por nome ou email" defaultValue={sp.q ?? ''} />
-            <button className="btn btn-primary" type="submit">
-              Buscar
-            </button>
-          </form>
+      <Nav current="leads" />
+      <div className="container stack">
+        <div className="card highlight-panel">
+          <div className="eyebrow">Clientes e leads</div>
+          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
+            Veja quem entrou, quem pagou e quem merece acompanhamento imediato.
+          </h1>
+          <p className="muted" style={{ marginTop: 14, maxWidth: 740, fontSize: 17 }}>
+            Clique em qualquer lead para abrir a ficha completa, com respostas do formulario,
+            historico de pagamento, pedido de reembolso e situacao atual.
+          </p>
         </div>
 
-        <div className="card" style={{ marginTop: 16, padding: 0, overflow: 'hidden' }}>
-          <div style={{ width: '100%', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="grid">
+          <div className="col-3">
+            <StatCard label="Leads listados" value={String(leads.length)} />
+          </div>
+          <div className="col-3">
+            <StatCard label="Pagaram" value={String(paidCount)} />
+          </div>
+          <div className="col-3">
+            <StatCard label="Nao pagaram" value={String(leads.length - paidCount)} />
+          </div>
+          <div className="col-3">
+            <StatCard label="Busca atual" value={sp.q?.trim() ? 'Filtrada' : 'Completa'} />
+          </div>
+        </div>
+
+        <div className="card">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              flexWrap: 'wrap',
+              marginBottom: 16,
+            }}
+          >
+            <div className="section-title" style={{ margin: 0 }}>
+              Base de clientes
+            </div>
+            <form style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                className="input"
+                name="q"
+                placeholder="Buscar por nome ou e-mail"
+                defaultValue={sp.q ?? ''}
+                style={{ minWidth: 280 }}
+              />
+              <button className="btn btn-primary" type="submit">
+                Buscar
+              </button>
+            </form>
+          </div>
+
+          <div className="table-shell">
+            <table className="table">
               <thead>
-                <tr style={{ textAlign: 'left', fontSize: 12, color: 'rgba(209,213,219,0.75)' }}>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Lead</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Email</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Pago</th>
-                  <th style={{ padding: 12, borderBottom: '1px solid rgba(55,65,81,0.6)' }}>Criado em</th>
+                <tr>
+                  <th>Lead</th>
+                  <th>Contato</th>
+                  <th>Situacao</th>
+                  <th>Entrada</th>
                 </tr>
               </thead>
               <tbody>
-                {leads.map((l) => (
-                  <tr key={l.id} style={{ borderBottom: '1px solid rgba(55,65,81,0.25)' }}>
-                    <td style={{ padding: 12, fontWeight: 700 }}>
-                      <Link href={`/leads/${l.id}`} prefetch={false}>
-                        {l.full_name || l.id.slice(0, 8)}
+                {leads.map((lead) => (
+                  <tr key={lead.id}>
+                    <td>
+                      <Link href={`/leads/${lead.id}`} prefetch={false}>
+                        {lead.full_name || 'Lead sem nome'}
                       </Link>
                     </td>
-                    <td style={{ padding: 12 }} className="muted">
-                      {l.email || '—'}
-                    </td>
-                    <td style={{ padding: 12 }}>
-                      <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: 999,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          background: l.has_paid ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.12)',
-                          border: `1px solid ${l.has_paid ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'}`,
-                          color: l.has_paid ? 'rgb(134,239,172)' : 'rgb(252,165,165)',
-                        }}
-                      >
-                        {l.has_paid ? 'SIM' : 'NAO'}
+                    <td className="muted">{lead.email || 'Sem e-mail'}</td>
+                    <td>
+                      <span className={`pill ${lead.has_paid ? 'success' : 'warn'}`}>
+                        {lead.has_paid ? 'Cliente pagante' : 'Lead em aberto'}
                       </span>
                     </td>
-                    <td style={{ padding: 12 }} className="muted">
-                      {new Date(l.created_at).toLocaleString('pt-BR')}
-                    </td>
+                    <td className="muted">{formatDateTime(lead.created_at)}</td>
                   </tr>
                 ))}
-                {leads.length === 0 && (
+                {leads.length === 0 ? (
                   <tr>
-                    <td style={{ padding: 12 }} className="muted" colSpan={4}>
-                      Nenhum lead encontrado.
+                    <td colSpan={4} className="muted">
+                      Nenhum lead encontrado para este filtro.
                     </td>
                   </tr>
-                )}
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -122,3 +149,4 @@ export default async function LeadsPage({
     </>
   );
 }
+
