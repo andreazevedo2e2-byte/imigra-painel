@@ -51,7 +51,8 @@ export function setAdminSession(email: string) {
   return cookies().then((store) =>
     store.set(COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: 'strict',
+      // Lax avoids edge cases with navigations/prefetch in some browsers.
+      sameSite: 'lax',
       secure: true,
       path: '/',
       maxAge: 60 * 60 * 12,
@@ -63,7 +64,7 @@ export function clearAdminSession() {
   return cookies().then((store) =>
     store.set(COOKIE_NAME, '', {
       httpOnly: true,
-      sameSite: 'strict',
+      sameSite: 'lax',
       secure: true,
       path: '/',
       maxAge: 0,
