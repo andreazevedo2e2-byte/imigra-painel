@@ -1,6 +1,14 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { clearAdminSession } from '@/lib/auth';
 
 export function Nav() {
+  async function logout() {
+    'use server';
+    await clearAdminSession();
+    redirect('/login');
+  }
+
   const links = [
     { href: '/', label: 'Dashboard' },
     { href: '/leads', label: 'Leads' },
@@ -23,7 +31,7 @@ export function Nav() {
       <div className="container" style={{ paddingTop: 14, paddingBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <Link href="/" style={{ fontWeight: 900, letterSpacing: -0.2 }}>
+            <Link href="/" prefetch={false} style={{ fontWeight: 900, letterSpacing: -0.2 }}>
               Imigra Painel
             </Link>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -40,9 +48,11 @@ export function Nav() {
               ))}
             </div>
           </div>
-          <Link href="/logout" className="btn btn-ghost" style={{ fontSize: 13 }}>
-            Sair
-          </Link>
+          <form action={logout}>
+            <button type="submit" className="btn btn-ghost" style={{ fontSize: 13 }}>
+              Sair
+            </button>
+          </form>
         </div>
       </div>
     </div>
