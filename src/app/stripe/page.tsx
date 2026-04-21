@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
-import { BarChart, MiniTable, StatCard } from '@/components/dashboard-ui';
+import { DonutChart, MiniTable, StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatCurrencyBRL, formatDateTime, formatPercent } from '@/lib/admin-presenters';
 import { stripePlatform } from '@/lib/stripe';
@@ -75,10 +75,14 @@ async function getStripeOverview() {
 }
 
 export default async function StripePage() {
-  const session = await requireAdminSession();
-  if (!session) redirect('/login');
+  const adminSession = await requireAdminSession();
+  if (!adminSession) redirect('/login');
 
   const data = await getStripeOverview();
+  const summary = [
+    { label: 'Vendas', value: data.salesCount },
+    { label: 'Reembolsos', value: data.refundCount },
+  ];
 
   return (
     <>
@@ -86,13 +90,7 @@ export default async function StripePage() {
       <div className="container stack">
         <div className="card highlight-panel">
           <div className="eyebrow">Vendas</div>
-          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
-            Visao comercial das vendas em tempo real.
-          </h1>
-          <p className="muted" style={{ marginTop: 14, maxWidth: 720, fontSize: 17 }}>
-            Aqui ficam somente indicadores de negocio: faturamento, quantidade de vendas,
-            ticket medio e ritmo de reembolso.
-          </p>
+          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 40px)' }}>Resumo de vendas</h1>
         </div>
 
         <div className="grid">
@@ -112,13 +110,7 @@ export default async function StripePage() {
 
         <div className="grid">
           <div className="col-5">
-            <BarChart
-              title="Resumo dos ultimos 30 dias"
-              items={[
-                { label: 'Vendas realizadas', value: data.salesCount },
-                { label: 'Pedidos de reembolso', value: data.refundCount },
-              ]}
-            />
+            <DonutChart title="Vendas x reembolsos nos ultimos 30 dias" items={summary} />
           </div>
           <div className="col-7">
             <MiniTable
