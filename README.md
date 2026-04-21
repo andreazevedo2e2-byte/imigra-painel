@@ -26,8 +26,8 @@ Recomendadas:
 
 Opcionais (para aprovar reembolsos via Stripe):
 
-- `STRIPE_SECRET_KEY` (secret key da plataforma)
-- `STRIPE_CONNECT_DESTINATION_ACCOUNT_ID` (acct_... do Rodrigo)
+- `STRIPE_SECRET_KEY` (secret key da plataforma) **OBRIGATORIO**
+- `STRIPE_CONNECT_DESTINATION_ACCOUNT_ID` (acct_... do Rodrigo) **OBRIGATORIO**
 
 ## Rodar local
 
@@ -41,4 +41,3 @@ Crie um `.env.local` com as env vars acima.
 ## Supabase SQL
 
 Veja `supabase.sql` para ajustes/colunas esperadas (refund_requests).
-

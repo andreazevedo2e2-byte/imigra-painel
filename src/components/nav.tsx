@@ -6,6 +6,7 @@ export function Nav() {
     { href: '/leads', label: 'Leads' },
     { href: '/pagamentos', label: 'Pagamentos' },
     { href: '/reembolsos', label: 'Reembolsos' },
+    { href: '/stripe', label: 'Stripe' },
   ];
 
   return (
@@ -46,4 +47,3 @@ export function Nav() {
     </div>
   );
 }
-

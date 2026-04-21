@@ -12,8 +12,8 @@ const EnvSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
 
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_CONNECT_DESTINATION_ACCOUNT_ID: z.string().optional(),
+  STRIPE_SECRET_KEY: z.string().min(10),
+  STRIPE_CONNECT_DESTINATION_ACCOUNT_ID: z.string().regex(/^acct_/, 'Must be a Stripe Connect acct_... id'),
 });
 
 export function getEnv() {
@@ -25,4 +25,3 @@ export function getEnv() {
   }
   return parsed.data;
 }
-

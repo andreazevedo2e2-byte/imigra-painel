@@ -89,12 +89,7 @@ async function approveRefund(formData: FormData) {
   if (!refundRequestId) redirect('/reembolsos');
 
   const env = getEnv();
-  if (!env.STRIPE_SECRET_KEY) {
-    throw new Error('Missing STRIPE_SECRET_KEY in Vercel env for Imigra Painel.');
-  }
-  if (!env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID) {
-    throw new Error('Missing STRIPE_CONNECT_DESTINATION_ACCOUNT_ID (acct_...) in Vercel env.');
-  }
+  // Stripe env vars are mandatory in this project (validated in getEnv()).
 
   const supabase = supabaseAdmin();
   const { data: rr, error: rrErr } = await supabase
