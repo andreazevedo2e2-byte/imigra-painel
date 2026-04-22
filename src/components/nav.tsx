@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { clearAdminSession } from '@/lib/auth';
 
 type NavProps = {
-  current: 'dashboard' | 'clients' | 'leads' | 'payments' | 'refunds' | 'debug';
+  current: 'dashboard' | 'clients' | 'leads' | 'payments' | 'refunds' | 'stripe' | 'debug';
 };
 
 export function Nav({ current }: NavProps) {
@@ -19,6 +19,7 @@ export function Nav({ current }: NavProps) {
     { href: '/leads', label: 'Leads', key: 'leads' },
     { href: '/pagamentos', label: 'Pagamentos', key: 'payments' },
     { href: '/reembolsos', label: 'Reembolsos', key: 'refunds' },
+    { href: '/stripe', label: 'Stripe', key: 'stripe' },
     { href: '/debug', label: 'Debug', key: 'debug' },
   ] as const;
 
