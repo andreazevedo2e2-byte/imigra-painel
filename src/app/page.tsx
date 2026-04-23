@@ -114,29 +114,22 @@ export default async function DashboardPage({
         </div>
 
         <div className="grid">
-          <div className="col-12">
-            <div className="card">
-              <div className="section-title">Funil</div>
-              <div className="grid" style={{ gap: 14 }}>
-                <div className="col-6">
-                  <BarChart
-                    title="Volume por etapa"
-                    items={snapshot.funnel.map((step) => ({ label: step.label, value: step.value }))}
-                  />
-                </div>
-                <div className="col-6">
-                  <MiniTable
-                    title="Queda entre etapas"
-                    columns={['Etapa', 'Volume', 'Queda']}
-                    rows={snapshot.funnel.map((step) => [
-                      step.label,
-                      String(step.value),
-                      step.drop > 0 ? `${step.drop.toFixed(1)}%` : '-',
-                    ])}
-                  />
-                </div>
-              </div>
-            </div>
+          <div className="col-6">
+            <BarChart
+              title="Funil (volume por etapa)"
+              items={snapshot.funnel.map((step) => ({ label: step.label, value: step.value }))}
+            />
+          </div>
+          <div className="col-6">
+            <MiniTable
+              title="Funil (queda entre etapas)"
+              columns={['Etapa', 'Volume', 'Queda']}
+              rows={snapshot.funnel.map((step) => [
+                step.label,
+                String(step.value),
+                step.drop > 0 ? `${step.drop.toFixed(1)}%` : '-',
+              ])}
+            />
           </div>
           <div className="col-6">
             <DonutChart

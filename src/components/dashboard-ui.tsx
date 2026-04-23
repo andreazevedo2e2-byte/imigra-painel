@@ -5,12 +5,12 @@ type StatCardProps = {
 };
 
 const chartPalette = [
-  '#ff7a59',
-  '#6dd3c7',
-  '#7aa2ff',
-  '#f4c95d',
-  '#c48cff',
-  '#7bd389',
+  '#8b5cf6',
+  '#ff6b4a',
+  '#22c55e',
+  '#60a5fa',
+  '#f59e0b',
+  '#94a3b8',
 ];
 
 export function StatCard({ label, value, hint }: StatCardProps) {
@@ -60,20 +60,77 @@ export function DonutChart({
     };
   });
 
-  const gradient = slices
-    .map((slice) => `${slice.color} ${slice.start}% ${slice.end}%`)
-    .join(', ');
+  const r = 58;
+  const stroke = 12;
+  const circumference = 2 * Math.PI * r;
 
   return (
     <div className="card chart-card">
       <div className="section-title">{title}</div>
       <div className="donut-layout">
         <div className="donut-wrap">
-          <div className="donut-chart" style={{ background: `conic-gradient(${gradient})` }}>
-            <div className="donut-hole">
-              <strong>{total}</strong>
-              <span>Total</span>
-            </div>
+          <div className="donut-svg-wrap" aria-label={`${title}: total ${total}`}>
+            <svg viewBox="0 0 160 160" width="180" height="180" role="img">
+              <g transform="translate(80 80) rotate(-90)">
+                <circle
+                  r={r}
+                  cx="0"
+                  cy="0"
+                  fill="none"
+                  stroke="rgba(148, 163, 184, 0.12)"
+                  strokeWidth={stroke}
+                />
+                {slices.map((slice) => {
+                  const startOffset = (slice.start / 100) * circumference;
+                  const length = (slice.percentage / 100) * circumference;
+                  return (
+                    <circle
+                      key={slice.label}
+                      r={r}
+                      cx="0"
+                      cy="0"
+                      fill="none"
+                      stroke={slice.color}
+                      strokeWidth={stroke}
+                      strokeLinecap="round"
+                      strokeDasharray={`${length} ${circumference}`}
+                      strokeDashoffset={-startOffset}
+                      style={{ filter: 'drop-shadow(0 10px 18px rgba(0,0,0,0.18))' }}
+                    />
+                  );
+                })}
+              </g>
+              <g>
+                <circle
+                  r={r - stroke / 2 - 10}
+                  cx="80"
+                  cy="80"
+                  fill="rgba(8, 14, 24, 0.9)"
+                  stroke="rgba(148, 163, 184, 0.12)"
+                  strokeWidth="1"
+                />
+                <text
+                  x="80"
+                  y="78"
+                  textAnchor="middle"
+                  fontSize="30"
+                  fontWeight="800"
+                  fill="rgba(244, 247, 251, 0.98)"
+                >
+                  {total}
+                </text>
+                <text
+                  x="80"
+                  y="102"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="700"
+                  fill="rgba(151, 164, 183, 0.9)"
+                >
+                  Total
+                </text>
+              </g>
+            </svg>
           </div>
         </div>
 
@@ -123,7 +180,7 @@ export function BarChart({ title, items, emptyLabel = 'Sem dados suficientes ain
                   className="bar-fill"
                   style={{
                     width: `${max > 0 ? (item.value / max) * 100 : 0}%`,
-                    background: `linear-gradient(90deg, ${chartPalette[index % chartPalette.length]} 0%, rgba(255,255,255,0.9) 100%)`,
+                    background: `linear-gradient(90deg, ${chartPalette[index % chartPalette.length]} 0%, rgba(255, 255, 255, 0.18) 100%)`,
                   }}
                 />
               </div>
