@@ -71,8 +71,46 @@ type ReportRow = {
 
 export type AdminSnapshot = Awaited<ReturnType<typeof getAdminSnapshot>>;
 
+type DailyPoint = { date: string; value: number };
+
 function toMs(value: string | null | undefined) {
   return value ? new Date(value).getTime() : 0;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function startOfUtcDayMs(inputMs: number) {
+  const d = new Date(inputMs);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function toUtcDayKey(value: string | null | undefined) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function buildDayKeys(endDayMs: number, days: number) {
+  const keys: string[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    keys.push(new Date(endDayMs - i * DAY_MS).toISOString().slice(0, 10));
+  }
+  return keys;
+}
+
+function seriesFromMap(keys: string[], map: Map<string, number>): DailyPoint[] {
+  return keys.map((date) => ({ date, value: map.get(date) ?? 0 }));
+}
+
+function sumSeries(points: DailyPoint[]) {
+  return points.reduce((sum, point) => sum + point.value, 0);
+}
+
+function deltaPercent(current: number, previous: number) {
+  if (previous <= 0) return null;
+  return ((current - previous) / previous) * 100;
 }
 
 function isWithinDays(value: string | null | undefined, days: number) {
@@ -332,6 +370,71 @@ export async function getAdminSnapshot(periodDays = 30) {
   const refundedCustomers = allRows.filter((row) => row.status === 'reembolsado');
   const leadRows = allRows.filter((row) => row.status === 'lead');
 
+  const currentEndDayMs = startOfUtcDayMs(Date.now());
+  const currentKeys = buildDayKeys(currentEndDayMs, periodDays);
+  const previousEndDayMs = currentEndDayMs - periodDays * DAY_MS;
+  const previousKeys = buildDayKeys(previousEndDayMs, periodDays);
+
+  const revenueByDay = new Map<string, number>();
+  const salesByDay = new Map<string, number>();
+
+  for (const payment of completedPayments) {
+    const key = toUtcDayKey(payment.created_at);
+    if (!key) continue;
+    revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + getPaymentAmountCents(payment));
+    salesByDay.set(key, (salesByDay.get(key) ?? 0) + 1);
+  }
+
+  const leadsByDay = new Map<string, number>();
+  for (const profile of profiles) {
+    const key = toUtcDayKey(profile.created_at);
+    if (!key) continue;
+    leadsByDay.set(key, (leadsByDay.get(key) ?? 0) + 1);
+  }
+
+  const firstPaidByUser = new Map<string, string>();
+  for (const payment of completedPayments) {
+    if (!payment.user_id) continue;
+    if (!payment.created_at) continue;
+    const existing = firstPaidByUser.get(payment.user_id);
+    if (!existing || payment.created_at < existing) firstPaidByUser.set(payment.user_id, payment.created_at);
+  }
+  const newCustomersByDay = new Map<string, number>();
+  for (const [, paidAt] of firstPaidByUser) {
+    const key = toUtcDayKey(paidAt);
+    if (!key) continue;
+    newCustomersByDay.set(key, (newCustomersByDay.get(key) ?? 0) + 1);
+  }
+
+  const refundsProcessedByDay = new Map<string, number>();
+  for (const refund of refundProcessed) {
+    const key = toUtcDayKey(refund.processed_at ?? refund.created_at);
+    if (!key) continue;
+    refundsProcessedByDay.set(key, (refundsProcessedByDay.get(key) ?? 0) + 1);
+  }
+
+  const revenueCurrent = seriesFromMap(currentKeys, revenueByDay);
+  const revenuePrevious = seriesFromMap(previousKeys, revenueByDay);
+  const salesCurrent = seriesFromMap(currentKeys, salesByDay);
+  const salesPrevious = seriesFromMap(previousKeys, salesByDay);
+  const leadsCurrent = seriesFromMap(currentKeys, leadsByDay);
+  const leadsPrevious = seriesFromMap(previousKeys, leadsByDay);
+  const newCustomersCurrent = seriesFromMap(currentKeys, newCustomersByDay);
+  const newCustomersPrevious = seriesFromMap(previousKeys, newCustomersByDay);
+  const refundsCurrent = seriesFromMap(currentKeys, refundsProcessedByDay);
+  const refundsPrevious = seriesFromMap(previousKeys, refundsProcessedByDay);
+
+  const revenueCurrentTotal = sumSeries(revenueCurrent);
+  const revenuePreviousTotal = sumSeries(revenuePrevious);
+  const salesCurrentTotal = sumSeries(salesCurrent);
+  const salesPreviousTotal = sumSeries(salesPrevious);
+  const leadsCurrentTotal = sumSeries(leadsCurrent);
+  const leadsPreviousTotal = sumSeries(leadsPrevious);
+  const newCustomersCurrentTotal = sumSeries(newCustomersCurrent);
+  const newCustomersPreviousTotal = sumSeries(newCustomersPrevious);
+  const refundsCurrentTotal = sumSeries(refundsCurrent);
+  const refundsPreviousTotal = sumSeries(refundsPrevious);
+
   return {
     counts: {
       profiles: profiles.length,
@@ -359,6 +462,43 @@ export async function getAdminSnapshot(periodDays = 30) {
       topObjectives,
       incomeRanges,
       recommendedVisas,
+    },
+    series: {
+      revenue: {
+        current: revenueCurrent,
+        previous: revenuePrevious,
+        currentTotal: revenueCurrentTotal,
+        previousTotal: revenuePreviousTotal,
+        delta: deltaPercent(revenueCurrentTotal, revenuePreviousTotal),
+      },
+      sales: {
+        current: salesCurrent,
+        previous: salesPrevious,
+        currentTotal: salesCurrentTotal,
+        previousTotal: salesPreviousTotal,
+        delta: deltaPercent(salesCurrentTotal, salesPreviousTotal),
+      },
+      leads: {
+        current: leadsCurrent,
+        previous: leadsPrevious,
+        currentTotal: leadsCurrentTotal,
+        previousTotal: leadsPreviousTotal,
+        delta: deltaPercent(leadsCurrentTotal, leadsPreviousTotal),
+      },
+      newCustomers: {
+        current: newCustomersCurrent,
+        previous: newCustomersPrevious,
+        currentTotal: newCustomersCurrentTotal,
+        previousTotal: newCustomersPreviousTotal,
+        delta: deltaPercent(newCustomersCurrentTotal, newCustomersPreviousTotal),
+      },
+      refundsProcessed: {
+        current: refundsCurrent,
+        previous: refundsPrevious,
+        currentTotal: refundsCurrentTotal,
+        previousTotal: refundsPreviousTotal,
+        delta: deltaPercent(refundsCurrentTotal, refundsPreviousTotal),
+      },
     },
     customers: customerRows,
     refundPendingCustomers,

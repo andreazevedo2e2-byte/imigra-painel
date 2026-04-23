@@ -17,6 +17,8 @@
   --red: #ff7d7d;
   --red-soft: rgba(255, 125, 125, 0.12);
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  --chart-primary: #8b5cf6;
+  --chart-primary-soft: rgba(139, 92, 246, 0.22);
 }
 
 html,
@@ -151,6 +153,42 @@ h3 {
   gap: 16px;
 }
 
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(8, 14, 24, 0.55);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  color: rgba(151, 164, 183, 0.92);
+  border: 1px solid transparent;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.seg-btn:hover {
+  color: rgba(244, 247, 251, 0.95);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.seg-btn.active {
+  color: white;
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.28);
+}
+
 .col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }
 .col-5 { grid-column: span 5; }
@@ -271,6 +309,172 @@ h3 {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+.metric-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 18px 14px;
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 16% 20%, rgba(139, 92, 246, 0.14), transparent 52%),
+    radial-gradient(circle at 84% 16%, rgba(122, 162, 255, 0.12), transparent 58%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.metric-card.accent-orange {
+  --chart-primary: var(--accent);
+  --chart-primary-soft: rgba(255, 107, 74, 0.22);
+}
+
+.metric-card.accent-orange::before {
+  background:
+    radial-gradient(circle at 16% 20%, rgba(255, 107, 74, 0.18), transparent 52%),
+    radial-gradient(circle at 84% 16%, rgba(122, 162, 255, 0.10), transparent 58%);
+}
+
+.metric-card.accent-violet {
+  --chart-primary: #8b5cf6;
+  --chart-primary-soft: rgba(139, 92, 246, 0.22);
+}
+
+.metric-head {
+  position: relative;
+  z-index: 1;
+}
+
+.metric-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(151, 164, 183, 0.88);
+}
+
+.metric-value {
+  margin-top: 10px;
+  font-size: clamp(26px, 3.6vw, 38px);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.metric-sub {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.metric-delta {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(244, 247, 251, 0.9);
+}
+
+.metric-delta.up {
+  background: var(--green-soft);
+  border-color: rgba(79, 209, 165, 0.22);
+  color: var(--green);
+}
+
+.metric-delta.down {
+  background: var(--red-soft);
+  border-color: rgba(255, 125, 125, 0.22);
+  color: var(--red);
+}
+
+.metric-prev {
+  font-size: 13px;
+  color: rgba(151, 164, 183, 0.92);
+}
+
+.metric-chart {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+  height: 172px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 14, 24, 0.42);
+  overflow: hidden;
+}
+
+.metric-chart svg {
+  display: block;
+}
+
+.metric-tooltip {
+  position: absolute;
+  top: 14px;
+  transform: translateX(-50%);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 14, 24, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  min-width: 168px;
+  pointer-events: none;
+}
+
+.metric-tooltip-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(244, 247, 251, 0.92);
+}
+
+.metric-tooltip-row + .metric-tooltip-row {
+  margin-top: 8px;
+  color: rgba(151, 164, 183, 0.92);
+}
+
+.metric-tooltip-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.metric-tooltip-swatch.current {
+  background: var(--chart-primary);
+}
+
+.metric-tooltip-swatch.prev {
+  background: rgba(148, 163, 184, 0.75);
+}
+
+.metric-tooltip-date {
+  font-weight: 650;
+}
+
+.metric-tooltip-value {
+  font-weight: 800;
+}
+
+.metric-axis {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: rgba(151, 164, 183, 0.84);
+  position: relative;
+  z-index: 1;
 }
 
 .stat-value {
