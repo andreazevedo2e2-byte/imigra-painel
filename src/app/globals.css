@@ -244,6 +244,10 @@ h3 {
 }
 
 .nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
   padding: 9px 14px;
   border-radius: 999px;
   color: var(--muted);

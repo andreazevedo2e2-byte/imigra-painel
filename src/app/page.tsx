@@ -55,12 +55,6 @@ export default async function DashboardPage() {
           </div>
           <div className="col-3">
             <StatCard
-              label="Conversao gratis -> cliente"
-              value={formatPercent(snapshot.metrics.conversionFreeToCustomer)}
-            />
-          </div>
-          <div className="col-3">
-            <StatCard
               label="Reembolsos pendentes"
               value={String(snapshot.metrics.refundPendingCount)}
             />

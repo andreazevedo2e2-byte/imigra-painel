@@ -35,13 +35,6 @@ function centsFromPayment(payment: any) {
   return typeof payment?.amount_cents === 'number' ? payment.amount_cents : payment?.amount ?? 0;
 }
 
-function stripePaymentIntentUrl(paymentIntentId: string | null | undefined, connectedAccountId: string | null | undefined) {
-  if (!paymentIntentId) return null;
-  const acct = typeof connectedAccountId === 'string' && connectedAccountId.startsWith('acct_') ? connectedAccountId : null;
-  const base = `https://dashboard.stripe.com/payments/${paymentIntentId}`;
-  return acct ? `${base}?account=${encodeURIComponent(acct)}` : base;
-}
-
 async function getPersonBundle(id: string) {
   const supabase = supabaseAdmin();
 
@@ -316,31 +309,16 @@ export default async function PessoaPage({
                       <th>Valor</th>
                       <th>Status</th>
                       <th>Data</th>
-                      <th>Conta conectada</th>
-                      <th>Stripe PI</th>
-                      <th>Acoes</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bundle.payments.map((payment: any) => {
                       const amount = centsFromPayment(payment);
-                      const piUrl = stripePaymentIntentUrl(payment.stripe_payment_intent_id, payment.connected_account_id);
                       return (
                         <tr key={payment.id}>
                           <td>{formatCurrencyBRL(amount / 100)}</td>
                           <td>{formatBusinessStatus(payment.status)}</td>
                           <td className="muted">{formatDateTime(payment.created_at)}</td>
-                          <td className="muted">{payment.connected_account_id || '—'}</td>
-                          <td className="muted">{payment.stripe_payment_intent_id ? String(payment.stripe_payment_intent_id).slice(0, 16) + '…' : '—'}</td>
-                          <td>
-                            {piUrl ? (
-                              <a className="btn btn-ghost" href={piUrl} target="_blank" rel="noreferrer">
-                                Ver na Stripe
-                              </a>
-                            ) : (
-                              <span className="muted">—</span>
-                            )}
-                          </td>
                         </tr>
                       );
                     })}
@@ -353,7 +331,7 @@ export default async function PessoaPage({
 
         {tab === 'diagnosticos' ? (
           <div className="grid">
-            <div className="col-6 stack">
+            <div className={isCustomer ? 'col-6 stack' : 'col-12 stack'}>
               <div className="card">
                 <div className="section-title">Diagnostico gratuito</div>
                 {latestFree ? (
@@ -382,32 +360,34 @@ export default async function PessoaPage({
               </div>
             </div>
 
-            <div className="col-6 stack">
-              <div className="card">
-                <div className="section-title">Diagnostico especifico</div>
-                {latestSession ? (
-                  <>
-                    <div className="muted" style={{ marginBottom: 14 }}>
-                      Formulario mais recente: {visaTypeLabels[latestSession.visa_type] ?? humanizeIdentifier(latestSession.visa_type)}
-                    </div>
-                    {responseList.length === 0 ? (
-                      <div className="muted">Nao ha respostas salvas para leitura.</div>
-                    ) : (
-                      <div className="kv-grid">
-                        {responseList.map((item) => (
-                          <div className="kv-card" key={item.id}>
-                            <div className="kv-label">{item.label}</div>
-                            <div className="kv-value">{item.value}</div>
-                          </div>
-                        ))}
+            {isCustomer ? (
+              <div className="col-6 stack">
+                <div className="card">
+                  <div className="section-title">Diagnostico especifico</div>
+                  {latestSession ? (
+                    <>
+                      <div className="muted" style={{ marginBottom: 14 }}>
+                        Formulario mais recente: {visaTypeLabels[latestSession.visa_type] ?? humanizeIdentifier(latestSession.visa_type)}
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="muted">Ainda nao iniciou.</div>
-                )}
+                      {responseList.length === 0 ? (
+                        <div className="muted">Nao ha respostas salvas para leitura.</div>
+                      ) : (
+                        <div className="kv-grid">
+                          {responseList.map((item) => (
+                            <div className="kv-card" key={item.id}>
+                              <div className="kv-label">{item.label}</div>
+                              <div className="kv-value">{item.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="muted">Ainda nao iniciou.</div>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -494,4 +474,3 @@ export default async function PessoaPage({
     </>
   );
 }
-

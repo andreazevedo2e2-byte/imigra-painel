@@ -10,13 +10,6 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-function stripePiUrl(pi: string | null | undefined, acct: string | null | undefined) {
-  if (!pi) return null;
-  const base = `https://dashboard.stripe.com/payments/${pi}`;
-  if (acct && acct.startsWith('acct_')) return `${base}?account=${encodeURIComponent(acct)}`;
-  return base;
-}
-
 async function requestRefund(formData: FormData) {
   'use server';
 
@@ -115,8 +108,6 @@ export default async function PagamentosPage({
                   <th>Status</th>
                   <th>Compra</th>
                   <th>Fee plataforma</th>
-                  <th>Conta conectada</th>
-                  <th>Stripe PI</th>
                   <th>Acoes</th>
                 </tr>
               </thead>
@@ -125,9 +116,6 @@ export default async function PagamentosPage({
                   const profile = payment.user_id ? snapshot.raw.profileById.get(payment.user_id) : null;
                   const amountCents = getPaymentAmountCents(payment);
                   const fee = (payment as any).application_fee_cents as number | null | undefined;
-                  const acct = (payment as any).connected_account_id as string | null | undefined;
-                  const pi = (payment as any).stripe_payment_intent_id as string | null | undefined;
-                  const piUrl = stripePiUrl(pi, acct);
                   return (
                     <tr key={payment.id}>
                       <td>
@@ -144,17 +132,8 @@ export default async function PagamentosPage({
                       <td>{formatBusinessStatus(payment.status)}</td>
                       <td className="muted">{formatDateTime(payment.created_at)}</td>
                       <td className="muted">{typeof fee === 'number' ? formatCurrencyBRL(fee / 100) : '—'}</td>
-                      <td className="muted">{acct || '—'}</td>
-                      <td className="muted">{pi ? `${pi.slice(0, 14)}…` : '—'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {piUrl ? (
-                            <a className="btn btn-ghost" href={piUrl} target="_blank" rel="noreferrer">
-                              Ver na Stripe
-                            </a>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
                           {payment.status === 'completed' ? (
                             <form action={requestRefund}>
                               <input type="hidden" name="payment_id" value={payment.id} />
@@ -162,7 +141,9 @@ export default async function PagamentosPage({
                                 Solicitar reembolso
                               </button>
                             </form>
-                          ) : null}
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -170,7 +151,7 @@ export default async function PagamentosPage({
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="muted">Nenhum pagamento encontrado.</td>
+                    <td colSpan={7} className="muted">Nenhum pagamento encontrado.</td>
                   </tr>
                 ) : null}
               </tbody>
