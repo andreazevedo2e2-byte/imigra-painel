@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
-import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
 import { getPaymentConnectedAccountId, updateUserAccessFlag } from '@/lib/admin-data';
@@ -295,27 +294,22 @@ export default async function ReembolsosPage({
     <>
       <Nav current="refunds" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Reembolsos</div>
-          <div className="muted">A fila abaixo usa o Supabase como fonte de verdade.</div>
-        </div>
-
-        {sp.success ? <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
-        {sp.error ? <div className="card" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
-
-        <div className="grid">
-          <div className="col-4">
-            <StatCard label="Pendentes" value={String(data.totals.pending)} />
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Reembolsos</div>
+            <div className="page-subtitle">Fila operacional (fonte: Supabase).</div>
           </div>
-          <div className="col-4">
-            <StatCard label="Concluidos" value={String(data.totals.approved)} />
-          </div>
-          <div className="col-4">
-            <StatCard label="Falharam" value={String(data.totals.failed)} />
+          <div className="badge-row">
+            <span className="pill warn">Pendentes: <strong>{data.totals.pending}</strong></span>
+            <span className="pill success">Concluidos: <strong>{data.totals.approved}</strong></span>
+            <span className="pill danger">Falharam: <strong>{data.totals.failed}</strong></span>
           </div>
         </div>
 
-        <div className="card">
+        {sp.success ? <div className="card soft" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
+        {sp.error ? <div className="card soft" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
+
+        <div className="card table-card">
           <div className="section-title">Fila</div>
           <div className="table-shell">
             <table className="table">

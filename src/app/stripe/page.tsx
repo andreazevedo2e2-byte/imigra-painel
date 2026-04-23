@@ -68,28 +68,32 @@ export default async function StripePage({
     <>
       <Nav current="stripe" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Stripe Connect</div>
-          <div className="muted">
-            Status real da conta conectada usada no checkout do Rodrigo.
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Stripe Connect</div>
+            <div className="page-subtitle">Status real da conta conectada usada no checkout.</div>
+          </div>
+          <div className="badge-row">
+            <span className="pill">Conta conectada: <strong>{env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID}</strong></span>
+            <span className="pill">Admin: <strong>{adminSession.email}</strong></span>
           </div>
         </div>
 
-        <div className="card">
+        <div className="card soft">
           <div className="muted">
             Pix pode nao ser habilitavel nesta configuracao. A capability <strong>pix_payments</strong> pode nao ser
-            requestable para BR via API. Use o Dashboard da Stripe (na conta conectada) e complete as pendencias para
-            habilitar metodos de pagamento.
+            requestable para BR via API. Habilite metodos de pagamento direto no Dashboard da Stripe (na conta conectada)
+            e complete as pendencias da conta.
           </div>
         </div>
 
         {sp.success ? (
-          <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>
+          <div className="card soft" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>
             {sp.success}
           </div>
         ) : null}
         {sp.error ? (
-          <div className="card" style={{ borderColor: 'rgba(248, 113, 113, 0.25)' }}>
+          <div className="card soft" style={{ borderColor: 'rgba(248, 113, 113, 0.25)' }}>
             {sp.error}
           </div>
         ) : null}
@@ -111,7 +115,7 @@ export default async function StripePage({
 
         <div className="grid">
           <div className="col-6">
-            <div className="card">
+            <div className="card table-card">
               <div className="section-title">Capabilities</div>
               <div className="kv-grid">
                 <div className="kv-card">
@@ -123,7 +127,7 @@ export default async function StripePage({
           </div>
 
           <div className="col-6">
-            <div className="card">
+            <div className="card table-card">
               <div className="section-title">Links</div>
               <div className="muted" style={{ marginBottom: 16 }}>
                 Acesse a conta conectada diretamente no Dashboard da Stripe.
@@ -135,7 +139,7 @@ export default async function StripePage({
           </div>
         </div>
 
-        <div className="card">
+        <div className="card table-card">
           <div className="section-title">Pendencias da conta</div>
           <div className="kv-grid">
             <div className="kv-card">
@@ -172,20 +176,6 @@ export default async function StripePage({
               Nenhuma exigencia pendente no momento.
             </div>
           )}
-        </div>
-
-        <div className="card">
-          <div className="section-title">Conta conectada</div>
-          <div className="kv-grid">
-            <div className="kv-card">
-              <div className="kv-label">Connected account</div>
-              <div className="kv-value">{env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID}</div>
-            </div>
-            <div className="kv-card">
-              <div className="kv-label">Admin logado</div>
-              <div className="kv-value">{adminSession.email}</div>
-            </div>
-          </div>
         </div>
       </div>
     </>

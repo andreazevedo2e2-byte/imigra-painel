@@ -73,13 +73,20 @@ export default async function PagamentosPage({
     <>
       <Nav current="payments" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Pagamentos</div>
-          <div className="muted">Fonte de verdade: tabela payments do Supabase.</div>
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Pagamentos</div>
+            <div className="page-subtitle">Fonte de verdade: tabela payments do Supabase.</div>
+          </div>
+          <div className="badge-row">
+            <span className="pill">Vendas concluidas: <strong>{snapshot.metrics.completedSales}</strong></span>
+            <span className="pill success">Receita bruta: <strong>{formatCurrencyBRL(snapshot.metrics.revenueBrutaCents / 100)}</strong></span>
+            <span className="pill warn">Refund pendente: <strong>{snapshot.metrics.refundPendingCount}</strong></span>
+          </div>
         </div>
 
-        {sp.success ? <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
-        {sp.error ? <div className="card" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
+        {sp.success ? <div className="card soft" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
+        {sp.error ? <div className="card soft" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
 
         <div className="grid">
           <div className="col-3">
@@ -96,7 +103,7 @@ export default async function PagamentosPage({
           </div>
         </div>
 
-        <div className="card">
+        <div className="card table-card">
           <div className="section-title">Lista</div>
           <div className="table-shell">
             <table className="table">

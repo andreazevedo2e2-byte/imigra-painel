@@ -132,7 +132,7 @@ export default async function PessoaPage({
         <Nav current="person" />
         <div className="container">
           <div className="card">
-            <h1 style={{ margin: 0 }}>Pessoa nao encontrada</h1>
+            <div className="page-title">Pessoa nao encontrada</div>
           </div>
         </div>
       </>
@@ -185,41 +185,38 @@ export default async function PessoaPage({
     <>
       <Nav current="person" />
       <div className="container stack">
-        <div className="card highlight-panel">
-          <div className="eyebrow">Ficha</div>
-          <h1 className="hero-title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
-            {bundle.profile.full_name || 'Sem nome'}
-          </h1>
-          <p className="muted" style={{ marginTop: 14, fontSize: 17 }}>
-            {bundle.profile.email || 'Sem e-mail cadastrado'}
-          </p>
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 18 }}>
-            <span className={badge.tone}>{badge.label}</span>
-            {latestSession?.visa_type ? (
-              <span className="pill">
-                Visto (ultimo): {visaTypeLabels[latestSession.visa_type] ?? humanizeIdentifier(latestSession.visa_type)}
-              </span>
-            ) : null}
-            {completedPayments[0]?.created_at ? (
-              <span className="pill">
-                Ultima compra: {formatDateTime(completedPayments[0].created_at)}
-              </span>
-            ) : null}
-            {totalPaidCents > 0 ? (
-              <span className="pill">
-                Total pago: {formatCurrencyBRL(totalPaidCents / 100)}
-              </span>
-            ) : null}
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">{bundle.profile.full_name || 'Sem nome'}</div>
+            <div className="page-subtitle">{bundle.profile.email || 'Sem e-mail cadastrado'}</div>
+            <div className="badge-row" style={{ marginTop: 14 }}>
+              <span className={badge.tone}>{badge.label}</span>
+              {latestSession?.visa_type ? (
+                <span className="pill">
+                  Visto (ultimo): {visaTypeLabels[latestSession.visa_type] ?? humanizeIdentifier(latestSession.visa_type)}
+                </span>
+              ) : null}
+              {completedPayments[0]?.created_at ? (
+                <span className="pill">
+                  Ultima compra: {formatDateTime(completedPayments[0].created_at)}
+                </span>
+              ) : null}
+              {totalPaidCents > 0 ? (
+                <span className="pill">
+                  Total pago: {formatCurrencyBRL(totalPaidCents / 100)}
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 18 }}>
+          <div className="segmented" role="tablist" aria-label="Abas">
             {tabs.map((t) => (
               <Link
                 key={t.key}
                 href={`/pessoas/${bundle.profile.id}?tab=${t.key}`}
                 prefetch={false}
-                className={`nav-link ${tab === t.key ? 'active' : ''}`}
+                aria-current={tab === t.key ? 'page' : undefined}
+                className={`seg-btn ${tab === t.key ? 'active' : ''}`}
               >
                 {t.label}
               </Link>

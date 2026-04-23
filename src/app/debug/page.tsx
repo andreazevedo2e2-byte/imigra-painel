@@ -246,13 +246,19 @@ export default async function DebugPage({
     <>
       <Nav current="debug" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Debug</div>
-          <div className="muted">Use esta tela para conferir se o painel esta lendo o projeto certo.</div>
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Debug</div>
+            <div className="page-subtitle">Conferir se o painel esta lendo o projeto certo e reconciliar dados.</div>
+          </div>
+          <div className="badge-row">
+            <span className="pill">Supabase: <strong>{supabaseInfo.projectRef}</strong></span>
+            <span className="pill">Admin: <strong>{adminSession.email}</strong></span>
+          </div>
         </div>
 
-        {sp.success ? <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
-        {sp.error ? <div className="card" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
+        {sp.success ? <div className="card soft" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
+        {sp.error ? <div className="card soft" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
 
         <div className="grid">
           <div className="col-3">

@@ -68,6 +68,127 @@ body::before {
   box-shadow: var(--shadow);
 }
 
+.card.soft {
+  background: linear-gradient(180deg, rgba(18, 28, 45, 0.78), rgba(15, 24, 39, 0.86));
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 820;
+  letter-spacing: -0.03em;
+}
+
+.page-subtitle {
+  margin-top: 8px;
+  color: rgba(151, 164, 183, 0.92);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.table-card {
+  padding: 18px 18px 14px;
+}
+
+.table-card .section-title {
+  margin-bottom: 12px;
+}
+
+.search-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-input {
+  min-width: 280px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 26px 24px 22px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(139, 92, 246, 0.16), transparent 52%),
+    radial-gradient(circle at 86% 24%, rgba(255, 107, 74, 0.12), transparent 56%);
+  opacity: 0.9;
+}
+
+.auth-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 880;
+  letter-spacing: -0.04em;
+}
+
+.form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label span {
+  font-size: 13px;
+  color: rgba(151, 164, 183, 0.92);
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .btn {
   appearance: none;
   border: 0;

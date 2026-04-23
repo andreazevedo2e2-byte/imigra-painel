@@ -54,9 +54,16 @@ export default async function ClientesPage({
     <>
       <Nav current="clients" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Clientes</div>
-          <div className="muted">Cliente ativo = pagou, segue com acesso e nao tem reembolso concluido.</div>
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Clientes</div>
+            <div className="page-subtitle">Ativo = pagou, segue com acesso e nao tem reembolso concluido.</div>
+          </div>
+          <div className="badge-row">
+            <span className="pill success">Ativos: <strong>{snapshot.customers.length}</strong></span>
+            <span className="pill warn">Refund pendente: <strong>{snapshot.refundPendingCustomers.length}</strong></span>
+            <span className="pill danger">Reembolsados: <strong>{snapshot.refundedCustomers.length}</strong></span>
+          </div>
         </div>
 
         <div className="grid">
@@ -78,24 +85,18 @@ export default async function ClientesPage({
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[
-                { href: '/clientes?filter=ativos', label: 'Ativos', active: filter === 'ativos' },
-                { href: '/clientes?filter=refund_pendente', label: 'Refund pendente', active: filter === 'refund_pendente' },
-                { href: '/clientes?filter=reembolsados', label: 'Reembolsados', active: filter === 'reembolsados' },
-                { href: '/clientes?filter=todos', label: 'Todos', active: filter === 'todos' },
-              ].map((item) => (
-                <Link key={item.href} href={item.href} prefetch={false} className={`nav-link ${item.active ? 'active' : ''}`}>
-                  {item.label}
-                </Link>
-              ))}
+        <div className="card table-card">
+          <div className="toolbar" style={{ marginBottom: 14 }}>
+            <div className="segmented" role="tablist" aria-label="Filtro de clientes">
+              <Link href="/clientes?filter=ativos" prefetch={false} className={`seg-btn ${filter === 'ativos' ? 'active' : ''}`}>Ativos</Link>
+              <Link href="/clientes?filter=refund_pendente" prefetch={false} className={`seg-btn ${filter === 'refund_pendente' ? 'active' : ''}`}>Refund pendente</Link>
+              <Link href="/clientes?filter=reembolsados" prefetch={false} className={`seg-btn ${filter === 'reembolsados' ? 'active' : ''}`}>Reembolsados</Link>
+              <Link href="/clientes?filter=todos" prefetch={false} className={`seg-btn ${filter === 'todos' ? 'active' : ''}`}>Todos</Link>
             </div>
 
-            <form style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <form className="search-form">
               <input name="filter" type="hidden" value={filter} />
-              <input className="input" name="q" placeholder="Buscar por nome ou e-mail" defaultValue={sp.q ?? ''} style={{ minWidth: 280 }} />
+              <input className="input search-input" name="q" placeholder="Buscar por nome ou e-mail" defaultValue={sp.q ?? ''} />
               <button className="btn btn-primary" type="submit">Buscar</button>
             </form>
           </div>

@@ -35,9 +35,16 @@ export default async function LeadsPage({
     <>
       <Nav current="leads" />
       <div className="container stack">
-        <div className="card">
-          <div className="section-title" style={{ marginBottom: 10 }}>Leads</div>
-          <div className="muted">Ainda nao pagaram.</div>
+        <div className="card highlight-panel page-head">
+          <div>
+            <div className="page-title">Leads</div>
+            <div className="page-subtitle">Ainda nao pagaram.</div>
+          </div>
+          <div className="badge-row">
+            <span className="pill">Leads abertos: <strong>{openLeadCount}</strong></span>
+            <span className="pill success">Gratis concluido: <strong>{freeCompletedCount}</strong></span>
+            <span className="pill warn">Gratis pendente: <strong>{freeNotCompletedCount}</strong></span>
+          </div>
         </div>
 
         <div className="grid">
@@ -52,10 +59,10 @@ export default async function LeadsPage({
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-            <form style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input className="input" name="q" placeholder="Buscar por nome ou e-mail" defaultValue={sp.q ?? ''} style={{ minWidth: 280 }} />
+        <div className="card table-card">
+          <div className="toolbar" style={{ marginBottom: 14, justifyContent: 'flex-end' }}>
+            <form className="search-form">
+              <input className="input search-input" name="q" placeholder="Buscar por nome ou e-mail" defaultValue={sp.q ?? ''} />
               <button className="btn btn-primary" type="submit">Buscar</button>
             </form>
           </div>

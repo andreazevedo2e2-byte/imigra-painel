@@ -37,27 +37,23 @@ export default async function LoginPage() {
   }
 
   return (
-    <div className="container" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-      <div className="card" style={{ width: '100%', maxWidth: 440, margin: '0 auto' }}>
-        <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.2 }}>Imigra Painel</h1>
-        <p className="muted" style={{ marginTop: 8, marginBottom: 18 }}>
+    <div className="container auth-shell">
+      <div className="card auth-card">
+        <h1 className="auth-title">Imigra Painel</h1>
+        <p className="page-subtitle" style={{ marginTop: 10, marginBottom: 18 }}>
           Acesso restrito para administradores.
         </p>
 
-        <form action={login} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="muted" style={{ fontSize: 13 }}>
-              E-mail
-            </span>
+        <form action={login} className="form-stack">
+          <label className="form-label">
+            <span>E-mail</span>
             <input className="input" name="email" type="email" required />
           </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="muted" style={{ fontSize: 13 }}>
-              Senha
-            </span>
+          <label className="form-label">
+            <span>Senha</span>
             <input className="input" name="password" type="password" required />
           </label>
-          <button className="btn btn-primary" type="submit" style={{ marginTop: 8 }}>
+          <button className="btn btn-primary" type="submit" style={{ marginTop: 10 }}>
             Entrar
           </button>
         </form>
