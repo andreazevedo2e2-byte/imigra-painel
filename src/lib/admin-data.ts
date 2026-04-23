@@ -16,6 +16,8 @@ export type PaymentRow = {
   amount: number | null;
   amount_cents?: number | null;
   currency?: string | null;
+  application_fee_cents?: number | null;
+  refunded_amount_cents?: number | null;
   status: string | null;
   created_at: string | null;
   refunded_at?: string | null;

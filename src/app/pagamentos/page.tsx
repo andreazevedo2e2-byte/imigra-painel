@@ -1,18 +1,77 @@
 import Link from 'next/link';
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
 import { getAdminSnapshot, getPaymentAmountCents } from '@/lib/admin-data';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PagamentosPage() {
+function stripePiUrl(pi: string | null | undefined, acct: string | null | undefined) {
+  if (!pi) return null;
+  const base = `https://dashboard.stripe.com/payments/${pi}`;
+  if (acct && acct.startsWith('acct_')) return `${base}?account=${encodeURIComponent(acct)}`;
+  return base;
+}
+
+async function requestRefund(formData: FormData) {
+  'use server';
+
+  const adminSession = await requireAdminSession();
+  if (!adminSession) redirect('/login');
+
+  const paymentId = String(formData.get('payment_id') ?? '').trim();
+  if (!paymentId) redirect('/pagamentos?error=' + encodeURIComponent('Pagamento invalido.'));
+
+  const supabase = supabaseAdmin();
+  const { data: payment } = await supabase.from('payments').select('*').eq('id', paymentId).maybeSingle();
+  if (!payment) redirect('/pagamentos?error=' + encodeURIComponent('Pagamento nao encontrado.'));
+  if (!payment.user_id) redirect('/pagamentos?error=' + encodeURIComponent('Pagamento sem user_id.'));
+
+  const { data: existing } = await supabase
+    .from('refund_requests')
+    .select('id,status')
+    .eq('payment_id', paymentId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const last = existing?.[0] ?? null;
+  if (last && (last.status === 'pending' || last.status === 'processing' || last.status === 'processed')) {
+    redirect('/pagamentos?success=' + encodeURIComponent('Este pagamento ja tem um pedido de reembolso.'));
+  }
+
+  await supabase.from('refund_requests').insert({
+    user_id: payment.user_id,
+    payment_id: paymentId,
+    stripe_payment_intent_id: payment.stripe_payment_intent_id ?? null,
+    status: 'pending',
+  });
+
+  // Mark the payment with the request timestamp (operational signal).
+  try {
+    await supabase.from('payments').update({ refund_requested_at: new Date().toISOString() }).eq('id', paymentId);
+  } catch {
+    // ignore
+  }
+
+  revalidatePath('/reembolsos');
+  revalidatePath('/pagamentos');
+  redirect('/pagamentos?success=' + encodeURIComponent('Pedido de reembolso criado. Veja a fila em Reembolsos.'));
+}
+
+export default async function PagamentosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
   const adminSession = await requireAdminSession();
   if (!adminSession) redirect('/login');
 
   const snapshot = await getAdminSnapshot();
+  const sp = await searchParams;
   const rows = snapshot.raw.payments
     .slice()
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
@@ -25,6 +84,9 @@ export default async function PagamentosPage() {
           <div className="section-title" style={{ marginBottom: 10 }}>Pagamentos</div>
           <div className="muted">Fonte de verdade: tabela payments do Supabase.</div>
         </div>
+
+        {sp.success ? <div className="card" style={{ borderColor: 'rgba(79, 209, 165, 0.25)' }}>{sp.success}</div> : null}
+        {sp.error ? <div className="card" style={{ borderColor: 'rgba(255, 125, 125, 0.25)' }}>{sp.error}</div> : null}
 
         <div className="grid">
           <div className="col-3">
@@ -52,17 +114,25 @@ export default async function PagamentosPage() {
                   <th>Valor</th>
                   <th>Status</th>
                   <th>Compra</th>
-                  <th>Reembolso</th>
+                  <th>Fee plataforma</th>
+                  <th>Conta conectada</th>
+                  <th>Stripe PI</th>
+                  <th>Acoes</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((payment) => {
                   const profile = payment.user_id ? snapshot.raw.profileById.get(payment.user_id) : null;
+                  const amountCents = getPaymentAmountCents(payment);
+                  const fee = (payment as any).application_fee_cents as number | null | undefined;
+                  const acct = (payment as any).connected_account_id as string | null | undefined;
+                  const pi = (payment as any).stripe_payment_intent_id as string | null | undefined;
+                  const piUrl = stripePiUrl(pi, acct);
                   return (
                     <tr key={payment.id}>
                       <td>
                         {payment.user_id ? (
-                          <Link href={`/leads/${payment.user_id}`} prefetch={false}>
+                          <Link href={`/pessoas/${payment.user_id}?tab=pagamentos`} prefetch={false}>
                             {profile?.full_name || 'Cliente sem nome'}
                           </Link>
                         ) : (
@@ -70,22 +140,37 @@ export default async function PagamentosPage() {
                         )}
                       </td>
                       <td className="muted">{profile?.email || 'Sem e-mail'}</td>
-                      <td>{formatCurrencyBRL(getPaymentAmountCents(payment) / 100)}</td>
+                      <td>{formatCurrencyBRL(amountCents / 100)}</td>
                       <td>{formatBusinessStatus(payment.status)}</td>
                       <td className="muted">{formatDateTime(payment.created_at)}</td>
-                      <td className="muted">
-                        {payment.refunded_at
-                          ? `Concluido em ${formatDateTime(payment.refunded_at)}`
-                          : payment.refund_requested_at
-                            ? `Pedido em ${formatDateTime(payment.refund_requested_at)}`
-                            : 'Sem pedido'}
+                      <td className="muted">{typeof fee === 'number' ? formatCurrencyBRL(fee / 100) : '—'}</td>
+                      <td className="muted">{acct || '—'}</td>
+                      <td className="muted">{pi ? `${pi.slice(0, 14)}…` : '—'}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {piUrl ? (
+                            <a className="btn btn-ghost" href={piUrl} target="_blank" rel="noreferrer">
+                              Ver na Stripe
+                            </a>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                          {payment.status === 'completed' ? (
+                            <form action={requestRefund}>
+                              <input type="hidden" name="payment_id" value={payment.id} />
+                              <button className="btn btn-primary" type="submit">
+                                Solicitar reembolso
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="muted">Nenhum pagamento encontrado.</td>
+                    <td colSpan={9} className="muted">Nenhum pagamento encontrado.</td>
                   </tr>
                 ) : null}
               </tbody>

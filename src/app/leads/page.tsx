@@ -94,7 +94,7 @@ export default async function LeadsPage({
                 {leads.map((lead) => (
                   <tr key={lead.id}>
                     <td>
-                      <Link href={`/leads/${lead.id}`} prefetch={false}>{lead.name}</Link>
+                      <Link href={`/pessoas/${lead.id}?tab=diagnosticos`} prefetch={false}>{lead.name}</Link>
                     </td>
                     <td className="muted">{lead.email}</td>
                     <td>{lead.hasFreeDiagnostic ? 'Concluido' : 'Nao'}</td>

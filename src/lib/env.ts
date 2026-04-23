@@ -14,6 +14,9 @@ const EnvSchema = z.object({
 
   STRIPE_SECRET_KEY: z.string().min(10),
   STRIPE_CONNECT_DESTINATION_ACCOUNT_ID: z.string().regex(/^acct_/, 'Must be a Stripe Connect acct_... id'),
+
+  // Feature flag for showing advanced admin pages (Stripe/Debug) in navigation.
+  ENABLE_ADMIN_DEBUG: z.string().optional(),
 });
 
 export function getEnv() {

@@ -12,6 +12,20 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
+async function safeUpdatePayment(paymentId: string, payload: Record<string, unknown>) {
+  const supabase = supabaseAdmin();
+  const { error } = await supabase.from('payments').update(payload).eq('id', paymentId);
+  if (!error) return;
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  const optional = ['refunded_amount_cents', 'application_fee_cents', 'amount_cents', 'currency', 'stripe_charge_id', 'customer_email'];
+  const missing = optional.filter((col) => message.includes(col));
+  if (missing.length === 0) throw error;
+  const fallback = { ...payload };
+  missing.forEach((col) => delete (fallback as any)[col]);
+  const retry = await supabase.from('payments').update(fallback).eq('id', paymentId);
+  if (retry.error) throw retry.error;
+}
+
 function isNextRedirectError(error: unknown) {
   return (
     typeof error === 'object' &&
@@ -211,14 +225,12 @@ async function approveRefund(formData: FormData) {
     );
 
     if (refund.status === 'succeeded') {
-      await supabase
-        .from('payments')
-        .update({
-          status: 'refunded',
-          refunded_at: new Date().toISOString(),
-          stripe_refund_id: refund.id,
-        })
-        .eq('id', payment.id);
+      await safeUpdatePayment(payment.id, {
+        status: 'refunded',
+        refunded_at: new Date().toISOString(),
+        stripe_refund_id: refund.id,
+        refunded_amount_cents: refund.amount ?? null,
+      });
 
       await supabase
         .from('refund_requests')
@@ -247,7 +259,7 @@ async function approveRefund(formData: FormData) {
     revalidatePath('/leads');
     revalidatePath('/pagamentos');
     revalidatePath('/reembolsos');
-    revalidatePath(`/leads/${payment.user_id}`);
+    revalidatePath(`/pessoas/${payment.user_id}`);
 
     redirect(buildFeedbackUrl('Reembolso enviado para a Stripe.', 'success'));
   } catch (error) {
@@ -322,7 +334,7 @@ export default async function ReembolsosPage({
               <tbody>
                 {data.rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.leadId ? <Link href={`/leads/${row.leadId}`} prefetch={false}>{row.customerName}</Link> : row.customerName}</td>
+                    <td>{row.leadId ? <Link href={`/pessoas/${row.leadId}?tab=reembolsos`} prefetch={false}>{row.customerName}</Link> : row.customerName}</td>
                     <td className="muted">{row.customerEmail}</td>
                     <td>{formatCurrencyBRL(row.amount / 100)}</td>
                     <td>{row.status}</td>

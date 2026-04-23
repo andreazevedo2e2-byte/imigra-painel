@@ -41,6 +41,14 @@ export default async function ClientesPage({
     return true;
   });
 
+  const reportUsers = new Set((snapshot.raw.reports ?? []).map((r: any) => r.user_id).filter(Boolean));
+  const customersWithoutReport = snapshot.customers.filter((customer) => !reportUsers.has(customer.id)).length;
+  const lastCompletedSale = snapshot.raw.payments
+    .filter((p: any) => p.status === 'completed' && p.created_at)
+    .slice()
+    .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 1)[0] ?? null;
+
   return (
     <>
       <Nav current="clients" />
@@ -61,7 +69,11 @@ export default async function ClientesPage({
             <StatCard label="Reembolsados" value={String(snapshot.leads.filter((lead) => lead.status === 'reembolsado').length)} />
           </div>
           <div className="col-3">
-            <StatCard label="Receita historica" value={formatCurrencyBRL(snapshot.metrics.revenueBrutaCents / 100)} />
+            <StatCard
+              label="Clientes sem relatorio"
+              value={String(customersWithoutReport)}
+              hint={lastCompletedSale?.created_at ? `Ultima venda: ${formatDateTime(lastCompletedSale.created_at)}` : undefined}
+            />
           </div>
         </div>
 
@@ -95,14 +107,14 @@ export default async function ClientesPage({
                   <th>Contato</th>
                   <th>Compra</th>
                   <th>Valor</th>
-                  <th>Visto</th>
+                  <th>Visto (ultimo)</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td><Link href={`/leads/${row.id}`} prefetch={false}>{row.name}</Link></td>
+                    <td><Link href={`/pessoas/${row.id}?tab=pagamentos`} prefetch={false}>{row.name}</Link></td>
                     <td className="muted">{row.email}</td>
                     <td className="muted">{row.activePayment?.created_at ? formatDateTime(row.activePayment.created_at) : '-'}</td>
                     <td>{row.activePayment ? formatCurrencyBRL(getPaymentAmountCents(row.activePayment) / 100) : '-'}</td>
