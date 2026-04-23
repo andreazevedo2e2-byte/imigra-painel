@@ -30,7 +30,8 @@ export default async function ClientesPage({
 
   const combined = [
     ...snapshot.customers,
-    ...snapshot.leads.filter((lead) => lead.status === 'refund_pendente' || lead.status === 'reembolsado'),
+    ...snapshot.refundPendingCustomers,
+    ...snapshot.refundedCustomers,
   ].filter((row, index, rows) => rows.findIndex((candidate) => candidate.id === row.id) === index);
 
   const rows = combined.filter((row) => {
@@ -63,10 +64,10 @@ export default async function ClientesPage({
             <StatCard label="Ativos" value={String(snapshot.customers.length)} />
           </div>
           <div className="col-3">
-            <StatCard label="Refund pendente" value={String(snapshot.leads.filter((lead) => lead.status === 'refund_pendente').length)} />
+            <StatCard label="Refund pendente" value={String(snapshot.refundPendingCustomers.length)} />
           </div>
           <div className="col-3">
-            <StatCard label="Reembolsados" value={String(snapshot.leads.filter((lead) => lead.status === 'reembolsado').length)} />
+            <StatCard label="Reembolsados" value={String(snapshot.refundedCustomers.length)} />
           </div>
           <div className="col-3">
             <StatCard

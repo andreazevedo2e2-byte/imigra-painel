@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { BarChart, DonutChart, MiniTable, StatCard } from '@/components/dashboard-ui';
-import { formatCurrencyBRL, formatPercent, humanizeIdentifier } from '@/lib/admin-presenters';
+import { formatAnswer, formatCurrencyBRL, formatDateTime, formatPercent, humanizeIdentifier } from '@/lib/admin-presenters';
 import { requireAdminSession } from '@/lib/auth';
 import { getAdminSnapshot, getPaymentAmountCents } from '@/lib/admin-data';
 
@@ -97,6 +97,15 @@ export default async function DashboardPage() {
           </div>
           <div className="col-6">
             <DonutChart
+              title="Renda anual aproximada"
+              items={snapshot.charts.incomeRanges.map((item) => ({
+                label: formatAnswer('income_range', item.label),
+                value: item.value,
+              }))}
+            />
+          </div>
+          <div className="col-6">
+            <DonutChart
               title="Vistos mais recomendados"
               items={snapshot.charts.recommendedVisas.map((item) => ({
                 label: humanizeIdentifier(item.label),
@@ -119,16 +128,12 @@ export default async function DashboardPage() {
           <div className="col-6">
             <MiniTable
               title="Leads recentes"
-              columns={['Nome', 'Contato', 'Status', 'Ultimo evento']}
+              columns={['Nome', 'Contato', 'Gratis', 'Ultimo evento']}
               rows={snapshot.leads.slice(0, 8).map((lead) => [
                 lead.name,
                 lead.email,
-                lead.status === 'reembolsado'
-                  ? 'Reembolsado'
-                  : lead.status === 'refund_pendente'
-                    ? 'Refund pendente'
-                    : 'Lead',
-                lead.lastEventAt ? new Date(lead.lastEventAt).toLocaleString('pt-BR') : '-',
+                lead.hasFreeDiagnostic ? 'Concluido' : 'Nao',
+                lead.lastEventAt ? formatDateTime(lead.lastEventAt) : formatDateTime(lead.createdAt),
               ])}
             />
           </div>

@@ -194,36 +194,6 @@ export async function getAdminSnapshot(periodDays = 30) {
     reportsByUser.set(report.user_id, [...(reportsByUser.get(report.user_id) ?? []), report]);
   }
 
-  const activeCustomers = profiles.filter((profile) => {
-    const userPayments = paymentsByUser.get(profile.id) ?? [];
-    const userRefunds = refundsByUser.get(profile.id) ?? [];
-    const hasActiveCompletedPayment = userPayments.some(
-      (payment) => payment.status === 'completed' && getPaymentRefundState(payment, userRefunds) === 'active'
-    );
-    return profile.has_paid === true && hasActiveCompletedPayment;
-  });
-
-  const refundPendingUsers = profiles.filter((profile) => {
-    const userPayments = paymentsByUser.get(profile.id) ?? [];
-    const userRefunds = refundsByUser.get(profile.id) ?? [];
-    return userPayments.some(
-      (payment) =>
-        payment.status === 'refund_pending' ||
-        getPaymentRefundState(payment, userRefunds) === 'refund_pending'
-    );
-  });
-
-  const refundedUsers = profiles.filter((profile) => {
-    const userPayments = paymentsByUser.get(profile.id) ?? [];
-    const userRefunds = refundsByUser.get(profile.id) ?? [];
-    return userPayments.some(
-      (payment) =>
-        payment.status === 'refunded' || getPaymentRefundState(payment, userRefunds) === 'refunded'
-    );
-  });
-
-  const leads = profiles.filter((profile) => !activeCustomers.some((customer) => customer.id === profile.id));
-
   const periodLeads = profiles.filter((profile) => isWithinDays(profile.created_at, periodDays));
   const completedPayments = payments.filter((payment) => payment.status === 'completed');
   const periodPayments = completedPayments.filter((payment) => isWithinDays(payment.created_at, periodDays));
@@ -261,8 +231,18 @@ export async function getAdminSnapshot(periodDays = 30) {
     };
   });
 
+  const latestFreeByUser = new Map<string, FreeDiagnosticRow>();
+  for (const row of freeDiagnostics) {
+    const existing = latestFreeByUser.get(row.user_id);
+    const rowMs = toMs(row.completed_at ?? row.created_at);
+    const existingMs = existing ? toMs(existing.completed_at ?? existing.created_at) : -1;
+    if (!existing || rowMs > existingMs) latestFreeByUser.set(row.user_id, row);
+  }
+
+  const latestFreeRows = Array.from(latestFreeByUser.values());
+
   const topObjectives = Array.from(
-    freeDiagnostics.reduce((map, item) => {
+    latestFreeRows.reduce((map, item) => {
       const value = item.responses?.objetivo;
       if (typeof value === 'string') map.set(value, (map.get(value) ?? 0) + 1);
       return map;
@@ -271,8 +251,18 @@ export async function getAdminSnapshot(periodDays = 30) {
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value);
 
+  const incomeRanges = Array.from(
+    latestFreeRows.reduce((map, item) => {
+      const value = item.responses?.income_range;
+      if (typeof value === 'string') map.set(value, (map.get(value) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value);
+
   const recommendedVisas = Array.from(
-    freeDiagnostics.reduce((map, item) => {
+    latestFreeRows.reduce((map, item) => {
       if (!Array.isArray(item.recommended_visas)) return map;
       for (const visa of item.recommended_visas) {
         if (typeof visa === 'string') map.set(visa, (map.get(visa) ?? 0) + 1);
@@ -295,11 +285,22 @@ export async function getAdminSnapshot(periodDays = 30) {
     const latestReport = latestOf(userReports);
     const latestRefund = latestOf(userRefunds);
 
-    const status = activeCustomers.some((customer) => customer.id === profile.id)
+    const hasActiveCompletedPayment = userPayments.some(
+      (payment) => payment.status === 'completed' && getPaymentRefundState(payment, userRefunds) === 'active'
+    );
+    const hasRefundPending = userPayments.some(
+      (payment) => payment.status === 'refund_pending' || getPaymentRefundState(payment, userRefunds) === 'refund_pending'
+    );
+    const hasRefunded = userPayments.some(
+      (payment) => payment.status === 'refunded' || getPaymentRefundState(payment, userRefunds) === 'refunded'
+    );
+
+    // Important: keep refunded/pending customers out of the "Leads" bucket.
+    const status = hasActiveCompletedPayment
       ? 'ativo'
-      : refundPendingUsers.some((item) => item.id === profile.id)
+      : hasRefundPending
         ? 'refund_pendente'
-        : refundedUsers.some((item) => item.id === profile.id)
+        : hasRefunded
           ? 'reembolsado'
           : 'lead';
 
@@ -325,8 +326,11 @@ export async function getAdminSnapshot(periodDays = 30) {
     };
   };
 
-  const customerRows = activeCustomers.map(buildLeadRow);
-  const leadRows = leads.map(buildLeadRow);
+  const allRows = profiles.map(buildLeadRow);
+  const customerRows = allRows.filter((row) => row.status === 'ativo');
+  const refundPendingCustomers = allRows.filter((row) => row.status === 'refund_pendente');
+  const refundedCustomers = allRows.filter((row) => row.status === 'reembolsado');
+  const leadRows = allRows.filter((row) => row.status === 'lead');
 
   return {
     counts: {
@@ -336,7 +340,7 @@ export async function getAdminSnapshot(periodDays = 30) {
     },
     metrics: {
       leadsPeriod: periodLeads.length,
-      activeCustomersNow: activeCustomers.length,
+      activeCustomersNow: customerRows.length,
       customersPeriod: periodCustomers.size,
       completedSales: completedPayments.length,
       periodSales: periodPayments.length,
@@ -353,9 +357,12 @@ export async function getAdminSnapshot(periodDays = 30) {
     funnel,
     charts: {
       topObjectives,
+      incomeRanges,
       recommendedVisas,
     },
     customers: customerRows,
+    refundPendingCustomers,
+    refundedCustomers,
     leads: leadRows,
     raw: {
       profiles,
