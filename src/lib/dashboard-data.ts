@@ -17,6 +17,8 @@ type PaymentRow = {
   id: string;
   user_id: string | null;
   amount: number | null;
+  amount_cents?: number | null;
+  currency?: string | null;
   status: string | null;
   created_at: string | null;
 };
@@ -107,11 +109,14 @@ export async function getDashboardData() {
   const refundRequests = refunds.filter((refund) => refund.status !== 'failed');
   const refundedPayments = payments.filter((payment) => payment.status === 'refunded');
 
-  const totalRevenueCents = completedPayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
+  const totalRevenueCents = completedPayments.reduce(
+    (sum, payment) => sum + (payment.amount_cents ?? payment.amount ?? 0),
+    0
+  );
   const monthStartIso = startOfMonthIso();
   const monthRevenueCents = completedPayments
     .filter((payment) => payment.created_at && payment.created_at >= monthStartIso)
-    .reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
+    .reduce((sum, payment) => sum + (payment.amount_cents ?? payment.amount ?? 0), 0);
 
   const latestFreeByUser = new Map<string, FreeDiagnosticRow>();
   for (const row of freeDiagnostics) {

@@ -12,13 +12,18 @@ type ProfileRow = {
 export type PaymentRow = {
   id: string;
   user_id: string | null;
+  stripe_session_id?: string | null;
   amount: number | null;
+  amount_cents?: number | null;
+  currency?: string | null;
   status: string | null;
   created_at: string | null;
   refunded_at?: string | null;
   refund_requested_at?: string | null;
   stripe_payment_intent_id?: string | null;
+  stripe_charge_id?: string | null;
   stripe_refund_id?: string | null;
+  customer_email?: string | null;
   connected_account_id?: string | null;
 };
 
@@ -105,6 +110,12 @@ function getLatestEventDate(dates: Array<string | null | undefined>) {
 export function getPaymentConnectedAccountId(payment: PaymentRow | null | undefined) {
   const env = getEnv();
   return payment?.connected_account_id || env.STRIPE_CONNECT_DESTINATION_ACCOUNT_ID;
+}
+
+export function getPaymentAmountCents(payment: PaymentRow | null | undefined) {
+  if (!payment) return 0;
+  if (typeof payment.amount_cents === 'number') return payment.amount_cents;
+  return payment.amount ?? 0;
 }
 
 export async function updateUserAccessFlag(userId: string) {
@@ -223,8 +234,8 @@ export async function getAdminSnapshot(periodDays = 30) {
       .map((item) => item.user_id)
   );
 
-  const totalRevenueCents = completedPayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
-  const periodRevenueCents = periodPayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
+  const totalRevenueCents = completedPayments.reduce((sum, payment) => sum + getPaymentAmountCents(payment), 0);
+  const periodRevenueCents = periodPayments.reduce((sum, payment) => sum + getPaymentAmountCents(payment), 0);
 
   const freeCompletedUsers = new Set(
     freeDiagnostics.filter((item) => item.completed_at).map((item) => item.user_id)

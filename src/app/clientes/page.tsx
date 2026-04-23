@@ -4,7 +4,7 @@ import { Nav } from '@/components/nav';
 import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatCurrencyBRL, formatDateTime, humanizeIdentifier, visaTypeLabels } from '@/lib/admin-presenters';
-import { getAdminSnapshot } from '@/lib/admin-data';
+import { getAdminSnapshot, getPaymentAmountCents } from '@/lib/admin-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +105,7 @@ export default async function ClientesPage({
                     <td><Link href={`/leads/${row.id}`} prefetch={false}>{row.name}</Link></td>
                     <td className="muted">{row.email}</td>
                     <td className="muted">{row.activePayment?.created_at ? formatDateTime(row.activePayment.created_at) : '-'}</td>
-                    <td>{row.activePayment?.amount ? formatCurrencyBRL(row.activePayment.amount / 100) : '-'}</td>
+                    <td>{row.activePayment ? formatCurrencyBRL(getPaymentAmountCents(row.activePayment) / 100) : '-'}</td>
                     <td>{row.latestVisaType ? (visaTypeLabels[row.latestVisaType] ?? humanizeIdentifier(row.latestVisaType)) : '-'}</td>
                     <td>
                       {row.status === 'ativo'

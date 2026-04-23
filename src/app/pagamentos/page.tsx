@@ -4,7 +4,7 @@ import { Nav } from '@/components/nav';
 import { StatCard } from '@/components/dashboard-ui';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
-import { getAdminSnapshot } from '@/lib/admin-data';
+import { getAdminSnapshot, getPaymentAmountCents } from '@/lib/admin-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +70,7 @@ export default async function PagamentosPage() {
                         )}
                       </td>
                       <td className="muted">{profile?.email || 'Sem e-mail'}</td>
-                      <td>{formatCurrencyBRL((payment.amount ?? 0) / 100)}</td>
+                      <td>{formatCurrencyBRL(getPaymentAmountCents(payment) / 100)}</td>
                       <td>{formatBusinessStatus(payment.status)}</td>
                       <td className="muted">{formatDateTime(payment.created_at)}</td>
                       <td className="muted">

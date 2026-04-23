@@ -127,7 +127,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const reportNextSteps = Array.isArray(reportContent?.nextSteps) ? (reportContent?.nextSteps as string[]) : [];
   const totalPaid = bundle.payments
     .filter((payment: any) => payment.status === 'completed')
-    .reduce((sum: number, payment: any) => sum + (payment.amount ?? 0), 0);
+    .reduce((sum: number, payment: any) => sum + (payment.amount_cents ?? payment.amount ?? 0), 0);
 
   return (
     <>
@@ -283,7 +283,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   {bundle.payments.map((payment: any) => (
                     <div className="timeline-item" key={payment.id}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                        <strong>{formatCurrencyBRL((payment.amount ?? 0) / 100)}</strong>
+                        <strong>{formatCurrencyBRL(((payment.amount_cents ?? payment.amount ?? 0) as number) / 100)}</strong>
                         <span className="muted">{formatBusinessStatus(payment.status)}</span>
                       </div>
                       <div className="muted" style={{ marginTop: 8 }}>

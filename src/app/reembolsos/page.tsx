@@ -88,7 +88,7 @@ async function getRefundQueue() {
       leadId: row.user_id,
       customerName: profile?.full_name || 'Cliente sem nome',
       customerEmail: profile?.email || 'Sem e-mail',
-      amount: payment?.amount ?? 0,
+      amount: payment?.amount_cents ?? payment?.amount ?? 0,
       status: formatBusinessStatus(rawStatus),
       purchaseDate: payment?.created_at ?? null,
       ageDays,

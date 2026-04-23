@@ -3,7 +3,7 @@ import { Nav } from '@/components/nav';
 import { BarChart, DonutChart, MiniTable, StatCard } from '@/components/dashboard-ui';
 import { formatCurrencyBRL, formatPercent, humanizeIdentifier } from '@/lib/admin-presenters';
 import { requireAdminSession } from '@/lib/auth';
-import { getAdminSnapshot } from '@/lib/admin-data';
+import { getAdminSnapshot, getPaymentAmountCents } from '@/lib/admin-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,9 +117,7 @@ export default async function DashboardPage() {
               rows={snapshot.customers.slice(0, 8).map((customer) => [
                 customer.name,
                 customer.email,
-                customer.activePayment?.amount
-                  ? formatCurrencyBRL(customer.activePayment.amount / 100)
-                  : '-',
+                customer.activePayment ? formatCurrencyBRL(getPaymentAmountCents(customer.activePayment) / 100) : '-',
                 'Ativo',
               ])}
             />
