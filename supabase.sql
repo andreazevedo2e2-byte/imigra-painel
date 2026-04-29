@@ -56,3 +56,26 @@ create table if not exists public.admin_audit (
 create index if not exists idx_admin_audit_created_at on public.admin_audit(created_at desc);
 create index if not exists idx_admin_audit_action on public.admin_audit(action);
 
+
+-- 3) First-party analytics do ImigraPlan (para o dashboard do Imigra Painel)
+create table if not exists public.analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  event_type text not null check (event_type in ('page_view', 'scroll_depth', 'cta_click')),
+  session_id text not null,
+  user_id uuid references public.profiles(id) on delete set null,
+  path text not null,
+  referrer text,
+  title text,
+  scroll_depth integer check (scroll_depth is null or (scroll_depth >= 0 and scroll_depth <= 100)),
+  target text,
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists idx_analytics_events_created_at on public.analytics_events(created_at desc);
+create index if not exists idx_analytics_events_event_type on public.analytics_events(event_type);
+create index if not exists idx_analytics_events_session_id on public.analytics_events(session_id);
+create index if not exists idx_analytics_events_user_id on public.analytics_events(user_id);
+create index if not exists idx_analytics_events_path on public.analytics_events(path);
+
+alter table public.analytics_events enable row level security;

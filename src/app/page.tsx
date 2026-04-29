@@ -39,6 +39,8 @@ export default async function DashboardPage({
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <span className="pill success">Clientes ativos: <strong>{snapshot.metrics.activeCustomersNow}</strong></span>
+            <span className="pill">Visitantes: <strong>{snapshot.metrics.visitorsPeriod}</strong></span>
+            <span className="pill">Scroll medio: <strong>{snapshot.metrics.avgScrollDepth.toFixed(0)}%</strong></span>
             <span className="pill warn">Reembolsos pendentes: <strong>{snapshot.metrics.refundPendingCount}</strong></span>
             <span className="pill">Taxa de reembolso: <strong>{snapshot.metrics.refundRate.toFixed(1)}%</strong></span>
           </div>
@@ -65,6 +67,18 @@ export default async function DashboardPage({
           </div>
           <div className="col-6">
             <MetricLineCard
+              title="Visitantes unicos"
+              unit="count"
+              currentTotal={snapshot.series.visitors.currentTotal}
+              previousTotal={snapshot.series.visitors.previousTotal}
+              delta={snapshot.series.visitors.delta}
+              current={snapshot.series.visitors.current}
+              previous={snapshot.series.visitors.previous}
+              accent="violet"
+            />
+          </div>
+          <div className="col-6">
+            <MetricLineCard
               title="Novos clientes"
               unit="count"
               currentTotal={snapshot.series.newCustomers.currentTotal}
@@ -73,6 +87,18 @@ export default async function DashboardPage({
               current={snapshot.series.newCustomers.current}
               previous={snapshot.series.newCustomers.previous}
               accent="violet"
+            />
+          </div>
+          <div className="col-6">
+            <MetricLineCard
+              title="Visualizacoes de pagina"
+              unit="count"
+              currentTotal={snapshot.series.pageViews.currentTotal}
+              previousTotal={snapshot.series.pageViews.previousTotal}
+              delta={snapshot.series.pageViews.delta}
+              current={snapshot.series.pageViews.current}
+              previous={snapshot.series.pageViews.previous}
+              accent="orange"
             />
           </div>
           <div className="col-4">
@@ -114,6 +140,58 @@ export default async function DashboardPage({
         </div>
 
         <div className="grid">
+          <div className="col-4">
+            <div className="card stat-card">
+              <div className="eyebrow">Cliques rastreados</div>
+              <div className="stat-value">{snapshot.metrics.ctaClicksPeriod}</div>
+              <div className="muted stat-hint">Botoes e links clicados no periodo.</div>
+            </div>
+          </div>
+          <div className="col-4">
+            <div className="card stat-card">
+              <div className="eyebrow">Scroll medio</div>
+              <div className="stat-value">{snapshot.metrics.avgScrollDepth.toFixed(0)}%</div>
+              <div className="muted stat-hint">Media do maior ponto de leitura por visita.</div>
+            </div>
+          </div>
+          <div className="col-4">
+            <div className="card stat-card">
+              <div className="eyebrow">Conversao lead para cliente</div>
+              <div className="stat-value">{snapshot.metrics.conversionLeadToCustomer.toFixed(1)}%</div>
+              <div className="muted stat-hint">Clientes do periodo divididos por leads do periodo.</div>
+            </div>
+          </div>
+          <div className="col-6">
+            <BarChart
+              title="Paginas mais acessadas"
+              items={snapshot.charts.topPaths}
+            />
+          </div>
+          <div className="col-6">
+            <BarChart
+              title="Cliques mais frequentes"
+              items={snapshot.charts.topClicks}
+            />
+          </div>
+          <div className="col-6">
+            <DonutChart
+              title="Dispositivos"
+              items={snapshot.charts.devices.map((item) => ({
+                label: humanizeIdentifier(item.label),
+                value: item.value,
+              }))}
+            />
+          </div>
+          <div className="col-6">
+            <MiniTable
+              title="Origem das visitas"
+              columns={['Origem', 'Visitas']}
+              rows={snapshot.charts.topReferrers.map((item) => [
+                item.label,
+                String(item.value),
+              ])}
+            />
+          </div>
           <div className="col-6">
             <BarChart
               title="Funil (volume por etapa)"

@@ -69,6 +69,20 @@ type ReportRow = {
   content: Record<string, unknown> | null;
 };
 
+type AnalyticsEventRow = {
+  id: string;
+  created_at: string;
+  event_type: 'page_view' | 'scroll_depth' | 'cta_click' | string;
+  session_id: string | null;
+  user_id: string | null;
+  path: string | null;
+  referrer?: string | null;
+  title?: string | null;
+  scroll_depth?: number | null;
+  target?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type AdminSnapshot = Awaited<ReturnType<typeof getAdminSnapshot>>;
 
 type DailyPoint = { date: string; value: number };
@@ -121,6 +135,19 @@ function isWithinDays(value: string | null | undefined, days: number) {
 
 function countDistinct(values: Array<string | null | undefined>) {
   return new Set(values.filter(Boolean)).size;
+}
+
+function pushTopItem(map: Map<string, number>, label: string | null | undefined, amount = 1) {
+  const clean = label?.replace(/\s+/g, ' ').trim();
+  if (!clean) return;
+  map.set(clean, (map.get(clean) ?? 0) + amount);
+}
+
+function toTopItems(map: Map<string, number>, limit = 8) {
+  return Array.from(map.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
 }
 
 function latestOf<T extends { created_at: string }>(rows: T[]) {
@@ -176,7 +203,7 @@ export async function updateUserAccessFlag(userId: string) {
 export async function getAdminSnapshot(periodDays = 30) {
   const supabase = supabaseAdmin();
 
-  const [profilesRes, paymentsRes, refundsRes, freeDiagnosticsRes, sessionsRes, reportsRes] =
+  const [profilesRes, paymentsRes, refundsRes, freeDiagnosticsRes, sessionsRes, reportsRes, analyticsRes] =
     await Promise.all([
       supabase.from('profiles').select('id,full_name,email,has_paid,created_at').limit(5000),
       supabase
@@ -198,6 +225,10 @@ export async function getAdminSnapshot(periodDays = 30) {
         .select('id,user_id,visa_type,status,created_at,completed_at,updated_at')
         .limit(5000),
       supabase.from('reports').select('id,user_id,session_id,visa_type,created_at,content').limit(5000),
+      supabase
+        .from('analytics_events')
+        .select('id,created_at,event_type,session_id,user_id,path,referrer,title,scroll_depth,target,metadata')
+        .limit(20000),
     ]);
 
   const profiles = (profilesRes.data ?? []) as ProfileRow[];
@@ -206,6 +237,7 @@ export async function getAdminSnapshot(periodDays = 30) {
   const freeDiagnostics = (freeDiagnosticsRes.data ?? []) as FreeDiagnosticRow[];
   const sessions = (sessionsRes.data ?? []) as DiagnosticSessionRow[];
   const reports = (reportsRes.data ?? []) as ReportRow[];
+  const analyticsEvents = (analyticsRes.data ?? []) as AnalyticsEventRow[];
 
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const paymentsByUser = new Map<string, PaymentRow[]>();
@@ -413,6 +445,61 @@ export async function getAdminSnapshot(periodDays = 30) {
     refundsProcessedByDay.set(key, (refundsProcessedByDay.get(key) ?? 0) + 1);
   }
 
+  const analyticsByDay = new Map<string, number>();
+  const analyticsVisitorSetsByDay = new Map<string, Set<string>>();
+  const periodAnalytics = analyticsEvents.filter((event) => isWithinDays(event.created_at, periodDays));
+  const periodPageViews = periodAnalytics.filter((event) => event.event_type === 'page_view');
+  const periodClicks = periodAnalytics.filter((event) => event.event_type === 'cta_click');
+  const periodScrolls = periodAnalytics.filter((event) => event.event_type === 'scroll_depth');
+  const pathMap = new Map<string, number>();
+  const clickMap = new Map<string, number>();
+  const referrerMap = new Map<string, number>();
+  const deviceMap = new Map<string, number>();
+  const maxScrollByVisit = new Map<string, number>();
+
+  for (const event of analyticsEvents) {
+    const key = toUtcDayKey(event.created_at);
+    if (!key) continue;
+    if (event.event_type === 'page_view') {
+      analyticsByDay.set(key, (analyticsByDay.get(key) ?? 0) + 1);
+      if (event.session_id) {
+        const set = analyticsVisitorSetsByDay.get(key) ?? new Set<string>();
+        set.add(event.session_id);
+        analyticsVisitorSetsByDay.set(key, set);
+      }
+    }
+  }
+
+  for (const event of periodPageViews) {
+    pushTopItem(pathMap, event.path || '/');
+    const referrer = event.referrer && !event.referrer.includes('imigraplan.vercel.app')
+      ? event.referrer
+      : 'Direto / interno';
+    pushTopItem(referrerMap, referrer);
+    const device = typeof event.metadata?.device === 'string' ? event.metadata.device : 'desconhecido';
+    pushTopItem(deviceMap, device);
+  }
+
+  for (const event of periodClicks) {
+    pushTopItem(clickMap, event.target || 'Clique sem nome');
+  }
+
+  for (const event of periodScrolls) {
+    if (!event.session_id || !event.path || typeof event.scroll_depth !== 'number') continue;
+    const key = `${event.session_id}:${event.path}`;
+    maxScrollByVisit.set(key, Math.max(maxScrollByVisit.get(key) ?? 0, event.scroll_depth));
+  }
+
+  const scrollDepthValues = Array.from(maxScrollByVisit.values());
+  const avgScrollDepth = scrollDepthValues.length
+    ? scrollDepthValues.reduce((sum, value) => sum + value, 0) / scrollDepthValues.length
+    : 0;
+
+  const analyticsVisitorsByDay = new Map<string, number>();
+  for (const [key, visitors] of analyticsVisitorSetsByDay) {
+    analyticsVisitorsByDay.set(key, visitors.size);
+  }
+
   const revenueCurrent = seriesFromMap(currentKeys, revenueByDay);
   const revenuePrevious = seriesFromMap(previousKeys, revenueByDay);
   const salesCurrent = seriesFromMap(currentKeys, salesByDay);
@@ -423,6 +510,10 @@ export async function getAdminSnapshot(periodDays = 30) {
   const newCustomersPrevious = seriesFromMap(previousKeys, newCustomersByDay);
   const refundsCurrent = seriesFromMap(currentKeys, refundsProcessedByDay);
   const refundsPrevious = seriesFromMap(previousKeys, refundsProcessedByDay);
+  const pageViewsCurrent = seriesFromMap(currentKeys, analyticsByDay);
+  const pageViewsPrevious = seriesFromMap(previousKeys, analyticsByDay);
+  const visitorsCurrent = seriesFromMap(currentKeys, analyticsVisitorsByDay);
+  const visitorsPrevious = seriesFromMap(previousKeys, analyticsVisitorsByDay);
 
   const revenueCurrentTotal = sumSeries(revenueCurrent);
   const revenuePreviousTotal = sumSeries(revenuePrevious);
@@ -434,6 +525,10 @@ export async function getAdminSnapshot(periodDays = 30) {
   const newCustomersPreviousTotal = sumSeries(newCustomersPrevious);
   const refundsCurrentTotal = sumSeries(refundsCurrent);
   const refundsPreviousTotal = sumSeries(refundsPrevious);
+  const pageViewsCurrentTotal = sumSeries(pageViewsCurrent);
+  const pageViewsPreviousTotal = sumSeries(pageViewsPrevious);
+  const visitorsCurrentTotal = sumSeries(visitorsCurrent);
+  const visitorsPreviousTotal = sumSeries(visitorsPrevious);
 
   return {
     counts: {
@@ -451,6 +546,10 @@ export async function getAdminSnapshot(periodDays = 30) {
       revenueBrutaPeriodCents: periodRevenueCents,
       refundPendingCount: refundPending.length,
       refundProcessedCount: refundProcessed.length,
+      pageViewsPeriod: periodPageViews.length,
+      visitorsPeriod: countDistinct(periodPageViews.map((event) => event.session_id)),
+      ctaClicksPeriod: periodClicks.length,
+      avgScrollDepth,
       conversionLeadToCustomer: periodLeads.length ? (periodCustomers.size / periodLeads.length) * 100 : 0,
       conversionFreeToCustomer: periodFreeDiagnostics.size
         ? (periodCustomers.size / periodFreeDiagnostics.size) * 100
@@ -462,6 +561,10 @@ export async function getAdminSnapshot(periodDays = 30) {
       topObjectives,
       incomeRanges,
       recommendedVisas,
+      topPaths: toTopItems(pathMap),
+      topClicks: toTopItems(clickMap),
+      topReferrers: toTopItems(referrerMap),
+      devices: toTopItems(deviceMap),
     },
     series: {
       revenue: {
@@ -498,6 +601,20 @@ export async function getAdminSnapshot(periodDays = 30) {
         currentTotal: refundsCurrentTotal,
         previousTotal: refundsPreviousTotal,
         delta: deltaPercent(refundsCurrentTotal, refundsPreviousTotal),
+      },
+      pageViews: {
+        current: pageViewsCurrent,
+        previous: pageViewsPrevious,
+        currentTotal: pageViewsCurrentTotal,
+        previousTotal: pageViewsPreviousTotal,
+        delta: deltaPercent(pageViewsCurrentTotal, pageViewsPreviousTotal),
+      },
+      visitors: {
+        current: visitorsCurrent,
+        previous: visitorsPrevious,
+        currentTotal: visitorsCurrentTotal,
+        previousTotal: visitorsPreviousTotal,
+        delta: deltaPercent(visitorsCurrentTotal, visitorsPreviousTotal),
       },
     },
     customers: customerRows,
