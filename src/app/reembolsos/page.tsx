@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
-import { updateUserAccessFlag } from '@/lib/admin-data';
+import { setUserAccessFlag } from '@/lib/admin-data';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -202,7 +202,7 @@ async function approveRefund(formData: FormData) {
       })
       .eq('id', payment.id);
 
-    await updateUserAccessFlag(payment.user_id);
+    await setUserAccessFlag(payment.user_id, false);
 
     revalidatePath('/');
     revalidatePath('/clientes');

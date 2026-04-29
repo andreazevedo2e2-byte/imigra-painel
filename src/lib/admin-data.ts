@@ -224,6 +224,14 @@ export async function updateUserAccessFlag(userId: string) {
   });
 }
 
+export async function setUserAccessFlag(userId: string, hasPaid: boolean) {
+  const supabase = supabaseAdmin();
+  await supabase.from('profiles').update({ has_paid: hasPaid }).eq('id', userId);
+  await supabase.auth.admin.updateUserById(userId, {
+    user_metadata: { has_paid: hasPaid },
+  });
+}
+
 export async function getAdminSnapshot(periodDays = 30) {
   const supabase = supabaseAdmin();
 
