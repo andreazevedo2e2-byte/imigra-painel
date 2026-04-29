@@ -36,7 +36,7 @@ export default async function RastreamentoPage({
           <div>
             <div className="page-title">Rastreamento</div>
             <div className="page-subtitle">
-              Comportamento dos visitantes nos ultimos {periodDays} dias. Dados aproximados, sem armazenar IP.
+              Tráfego da landing page nos últimos {periodDays} dias. Dados aproximados, sem armazenar IP.
             </div>
           </div>
           <div className="badge-row">
@@ -83,9 +83,9 @@ export default async function RastreamentoPage({
         <div className="grid">
           <div className="col-4">
             <div className="card stat-card">
-              <div className="eyebrow">Cliques rastreados</div>
+              <div className="eyebrow">Visitantes que clicaram em CTA</div>
               <div className="stat-value">{snapshot.metrics.ctaClicksPeriod}</div>
-              <div className="muted stat-hint">Cliques em botoes e links.</div>
+              <div className="muted stat-hint">Conta visitantes únicos, não quantidade bruta de cliques.</div>
             </div>
           </div>
           <div className="col-4">
@@ -109,7 +109,7 @@ export default async function RastreamentoPage({
             <BarChart title="Paginas mais acessadas" items={snapshot.charts.topPaths} />
           </div>
           <div className="col-6">
-            <BarChart title="Cliques mais frequentes" items={snapshot.charts.topClicks} />
+            <BarChart title="CTAs mais acionados" items={snapshot.charts.topClicks} />
           </div>
           <div className="col-4">
             <DonutChart title="Paises" items={snapshot.charts.countries} />

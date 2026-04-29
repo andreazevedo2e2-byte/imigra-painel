@@ -1,28 +1,40 @@
-import Stripe from 'stripe';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { requireAdminSession } from '@/lib/auth';
 import { formatBusinessStatus, formatCurrencyBRL, formatDateTime } from '@/lib/admin-presenters';
-import { getPaymentConnectedAccountId, updateUserAccessFlag } from '@/lib/admin-data';
-import { getEnv } from '@/lib/env';
+import { updateUserAccessFlag } from '@/lib/admin-data';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-async function safeUpdatePayment(paymentId: string, payload: Record<string, unknown>) {
-  const supabase = supabaseAdmin();
-  const { error } = await supabase.from('payments').update(payload).eq('id', paymentId);
-  if (!error) return;
-  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  const optional = ['refunded_amount_cents', 'application_fee_cents', 'amount_cents', 'currency', 'stripe_charge_id', 'customer_email'];
-  const missing = optional.filter((col) => message.includes(col));
-  if (missing.length === 0) throw error;
-  const fallback = { ...payload };
-  missing.forEach((col) => delete (fallback as any)[col]);
-  const retry = await supabase.from('payments').update(fallback).eq('id', paymentId);
-  if (retry.error) throw retry.error;
+
+function parseRefundDetails(reason: string | null, errorMessage: string | null) {
+  const raw = reason ?? '';
+  const phoneMatch = raw.match(/Telefone:\s*([^\n|]+)/i);
+  const reasonMatch = raw.match(/Motivo:\s*([\s\S]*)/i);
+  const phone = phoneMatch?.[1]?.trim() || null;
+  const parsedReason = (reasonMatch?.[1] ?? raw)
+    .replace(/\|\s*Erro:[\s\S]*$/i, '')
+    .trim();
+
+  return {
+    phone,
+    reason: parsedReason || null,
+    error: errorMessage || null,
+  };
+}
+
+function buildWhatsAppUrl(phone: string | null, name: string) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return null;
+  const withCountry = digits.startsWith('55') ? digits : `55${digits}`;
+  const message = encodeURIComponent(
+    `Ola, ${name}. Recebemos sua solicitacao de reembolso no ImigraPlan e queremos entender melhor como podemos ajudar.`
+  );
+  return `https://wa.me/${withCountry}?text=${message}`;
 }
 
 function isNextRedirectError(error: unknown) {
@@ -106,7 +118,7 @@ async function getRefundQueue() {
       purchaseDate: payment?.created_at ?? null,
       ageDays,
       isLate: typeof ageDays === 'number' ? ageDays > 7 : false,
-      reason: row.reason || null,
+      ...parseRefundDetails(row.reason || null, row.error_message || null),
       rawStatus,
       paymentStatus: payment?.status ?? null,
       errorMessage: row.error_message || null,
@@ -132,10 +144,7 @@ async function approveRefund(formData: FormData) {
   const refundRequestId = String(formData.get('refund_request_id') ?? '').trim();
   if (!refundRequestId) redirect(buildFeedbackUrl('Pedido de reembolso invalido.', 'error'));
 
-  const env = getEnv();
   const supabase = supabaseAdmin();
-
-  let paymentId: string | null = null;
 
   try {
     const { data: refundRequest } = await supabase
@@ -149,7 +158,7 @@ async function approveRefund(formData: FormData) {
     }
 
     if (refundRequest.status === 'processed') {
-      redirect(buildFeedbackUrl('Este reembolso ja foi concluido.', 'success'));
+      redirect(buildFeedbackUrl('Este reembolso ja foi marcado como concluido.', 'success'));
     }
 
     const { data: payment } = refundRequest.payment_id
@@ -164,35 +173,8 @@ async function approveRefund(formData: FormData) {
       redirect(buildFeedbackUrl('Pagamento vinculado nao encontrado.', 'error'));
     }
 
-    paymentId = payment.id;
-
-    if (payment.status === 'refunded') {
-      await supabase
-        .from('refund_requests')
-        .update({
-          status: 'processed',
-          processed_at: new Date().toISOString(),
-          stripe_refund_id: refundRequest.stripe_refund_id ?? payment.stripe_refund_id ?? null,
-        })
-        .eq('id', refundRequestId);
-      await updateUserAccessFlag(payment.user_id);
-      redirect(buildFeedbackUrl('Pagamento ja estava reembolsado e foi reconciliado.', 'success'));
-    }
-
-    if (refundRequest.status === 'processing' || payment.status === 'refund_pending') {
-      redirect(buildFeedbackUrl('Este reembolso ja esta em processamento.', 'success'));
-    }
-
     const paymentCreatedAt = payment.created_at ? new Date(payment.created_at) : null;
-    if (!paymentCreatedAt) {
-      await supabase
-        .from('refund_requests')
-        .update({ status: 'failed', error_message: 'Data do pagamento invalida.' })
-        .eq('id', refundRequestId);
-      redirect(buildFeedbackUrl('Data do pagamento invalida.', 'error'));
-    }
-
-    if (daysDiffCalendarSaoPaulo(paymentCreatedAt, new Date()) > 7) {
+    if (paymentCreatedAt && daysDiffCalendarSaoPaulo(paymentCreatedAt, new Date()) > 7) {
       await supabase
         .from('refund_requests')
         .update({ status: 'failed', error_message: 'Prazo de 7 dias expirado.' })
@@ -200,58 +182,27 @@ async function approveRefund(formData: FormData) {
       redirect(buildFeedbackUrl('Pedido fora do prazo de 7 dias.', 'error'));
     }
 
-    const paymentIntentId =
-      payment.stripe_payment_intent_id ?? refundRequest.stripe_payment_intent_id ?? null;
-    if (!paymentIntentId) {
-      await supabase
-        .from('refund_requests')
-        .update({ status: 'failed', error_message: 'Pagamento sem payment intent.' })
-        .eq('id', refundRequestId);
-      redirect(buildFeedbackUrl('Pagamento sem identificador Stripe.', 'error'));
-    }
-
     await supabase
       .from('refund_requests')
-      .update({ status: 'processing', error_message: null })
+      .update({
+        status: 'processed',
+        processed_at: new Date().toISOString(),
+        error_message: null,
+        stripe_refund_id: refundRequest.stripe_refund_id ?? 'manual',
+      })
       .eq('id', refundRequestId);
 
-    await supabase.from('payments').update({ status: 'refund_pending' }).eq('id', payment.id);
-
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
-    const refund = await stripe.refunds.create(
-      { payment_intent: paymentIntentId },
-      { stripeAccount: getPaymentConnectedAccountId(payment) }
-    );
-
-    if (refund.status === 'succeeded') {
-      await safeUpdatePayment(payment.id, {
+    await supabase
+      .from('payments')
+      .update({
         status: 'refunded',
         refunded_at: new Date().toISOString(),
-        stripe_refund_id: refund.id,
-        refunded_amount_cents: refund.amount ?? null,
-      });
+        stripe_refund_id: payment.stripe_refund_id ?? 'manual',
+        refunded_amount_cents: payment.amount_cents ?? payment.amount ?? null,
+      })
+      .eq('id', payment.id);
 
-      await supabase
-        .from('refund_requests')
-        .update({
-          status: 'processed',
-          stripe_refund_id: refund.id,
-          processed_at: new Date().toISOString(),
-          error_message: null,
-        })
-        .eq('id', refundRequestId);
-
-      await updateUserAccessFlag(payment.user_id);
-    } else {
-      await supabase
-        .from('refund_requests')
-        .update({
-          status: 'processing',
-          stripe_refund_id: refund.id,
-          error_message: null,
-        })
-        .eq('id', refundRequestId);
-    }
+    await updateUserAccessFlag(payment.user_id);
 
     revalidatePath('/');
     revalidatePath('/clientes');
@@ -260,9 +211,11 @@ async function approveRefund(formData: FormData) {
     revalidatePath('/reembolsos');
     revalidatePath(`/pessoas/${payment.user_id}`);
 
-    redirect(buildFeedbackUrl('Reembolso enviado para a Stripe.', 'success'));
+    redirect(buildFeedbackUrl('Reembolso marcado como concluido. Faca o reembolso financeiro manualmente na Stripe.', 'success'));
   } catch (error) {
-    if (isNextRedirectError(error)) throw error;
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
 
     const message = error instanceof Error ? error.message : 'Erro interno ao aprovar reembolso.';
     await supabase
@@ -270,15 +223,10 @@ async function approveRefund(formData: FormData) {
       .update({ status: 'failed', error_message: message })
       .eq('id', refundRequestId);
 
-    if (paymentId) {
-      await supabase.from('payments').update({ status: 'completed' }).eq('id', paymentId);
-    }
-
     revalidatePath('/reembolsos');
     redirect(buildFeedbackUrl(message, 'error'));
   }
 }
-
 export default async function ReembolsosPage({
   searchParams,
 }: {
@@ -321,6 +269,7 @@ export default async function ReembolsosPage({
                   <th>Status</th>
                   <th>Compra</th>
                   <th>Prazo</th>
+                  <th>Telefone</th>
                   <th>Motivo</th>
                   <th />
                 </tr>
@@ -342,8 +291,18 @@ export default async function ReembolsosPage({
                         <span className="pill success">{row.ageDays} dias</span>
                       )}
                     </td>
+                    <td>
+                      {row.phone ? (
+                        <a className="btn btn-ghost" href={buildWhatsAppUrl(row.phone, row.customerName) ?? '#'} target="_blank" rel="noreferrer">
+                          WhatsApp
+                        </a>
+                      ) : (
+                        <span className="muted">Sem telefone</span>
+                      )}
+                    </td>
                     <td className="muted" style={{ maxWidth: 320 }}>
-                      {row.errorMessage ? `${row.reason || 'Sem motivo'} | Erro: ${row.errorMessage}` : row.reason || 'Sem motivo informado'}
+                      {row.reason || 'Sem motivo informado'}
+                      {row.error ? <div className="pill danger" style={{ marginTop: 8 }}>Erro anterior: {row.error}</div> : null}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <form action={approveRefund}>
@@ -351,8 +310,8 @@ export default async function ReembolsosPage({
                         <button
                           className="btn btn-primary"
                           type="submit"
-                          disabled={row.isLate || row.rawStatus !== 'pending'}
-                          style={{ opacity: row.isLate || row.rawStatus !== 'pending' ? 0.45 : 1 }}
+                          disabled={row.isLate || row.rawStatus === 'processed'}
+                          style={{ opacity: row.isLate || row.rawStatus === 'processed' ? 0.45 : 1 }}
                         >
                           Aprovar
                         </button>
@@ -362,7 +321,7 @@ export default async function ReembolsosPage({
                 ))}
                 {data.rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="muted">Nenhum pedido de reembolso cadastrado.</td>
+                    <td colSpan={9} className="muted">Nenhum pedido de reembolso cadastrado.</td>
                   </tr>
                 ) : null}
               </tbody>

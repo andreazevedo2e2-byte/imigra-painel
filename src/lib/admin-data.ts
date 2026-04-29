@@ -161,6 +161,19 @@ function readMetadataString(
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function getAnalyticsPathname(path: string | null | undefined) {
+  if (!path) return '/';
+  try {
+    return new URL(path, 'https://imigraplan.local').pathname;
+  } catch {
+    return path.split('?')[0] || '/';
+  }
+}
+
+function isTrackedLandingEvent(event: AnalyticsEventRow) {
+  return getAnalyticsPathname(event.path) === '/';
+}
+
 function latestOf<T extends { created_at: string }>(rows: T[]) {
   return rows.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
 }
@@ -458,7 +471,8 @@ export async function getAdminSnapshot(periodDays = 30) {
 
   const analyticsByDay = new Map<string, number>();
   const analyticsVisitorSetsByDay = new Map<string, Set<string>>();
-  const periodAnalytics = analyticsEvents.filter((event) => isWithinDays(event.created_at, periodDays));
+  const trackedAnalyticsEvents = analyticsEvents.filter(isTrackedLandingEvent);
+  const periodAnalytics = trackedAnalyticsEvents.filter((event) => isWithinDays(event.created_at, periodDays));
   const periodPageViews = periodAnalytics.filter((event) => event.event_type === 'page_view');
   const periodClicks = periodAnalytics.filter((event) => event.event_type === 'cta_click');
   const periodScrolls = periodAnalytics.filter((event) => event.event_type === 'scroll_depth');
@@ -471,7 +485,7 @@ export async function getAdminSnapshot(periodDays = 30) {
   const cityMap = new Map<string, number>();
   const maxScrollByVisit = new Map<string, number>();
 
-  for (const event of analyticsEvents) {
+  for (const event of trackedAnalyticsEvents) {
     const key = toUtcDayKey(event.created_at);
     if (!key) continue;
     if (event.event_type === 'page_view') {
@@ -484,8 +498,17 @@ export async function getAdminSnapshot(periodDays = 30) {
     }
   }
 
+  const firstPageViewBySession = new Map<string, AnalyticsEventRow>();
   for (const event of periodPageViews) {
-    pushTopItem(pathMap, event.path || '/');
+    if (!event.session_id) continue;
+    const existing = firstPageViewBySession.get(event.session_id);
+    if (!existing || toMs(event.created_at) < toMs(existing.created_at)) {
+      firstPageViewBySession.set(event.session_id, event);
+    }
+  }
+
+  for (const event of Array.from(firstPageViewBySession.values())) {
+    pushTopItem(pathMap, getAnalyticsPathname(event.path));
     const referrer = event.referrer && !event.referrer.includes('imigraplan.vercel.app')
       ? event.referrer
       : 'Direto / interno';
@@ -500,8 +523,16 @@ export async function getAdminSnapshot(periodDays = 30) {
     pushTopItem(cityMap, city ?? 'Cidade nao identificada');
   }
 
+  const clickedSessionsByCta = new Map<string, Set<string>>();
   for (const event of periodClicks) {
-    pushTopItem(clickMap, event.target || 'Clique sem nome');
+    if (!event.session_id) continue;
+    const target = event.target || 'CTA sem nome';
+    const set = clickedSessionsByCta.get(target) ?? new Set<string>();
+    set.add(event.session_id);
+    clickedSessionsByCta.set(target, set);
+  }
+  for (const [target, sessions] of clickedSessionsByCta) {
+    pushTopItem(clickMap, target, sessions.size);
   }
 
   for (const event of periodScrolls) {
@@ -537,10 +568,9 @@ export async function getAdminSnapshot(periodDays = 30) {
       const paths = new Set(sorted.map((event) => event.path ?? ''));
       const clickedPayment = sorted.some((event) => {
         const target = `${event.target ?? ''}`.toLowerCase();
-        return event.event_type === 'cta_click' && /pag|checkout|acesso|diagnostico completo/.test(target);
+        return event.event_type === 'cta_click' && /diagnostico gratis|entrar|precos|como funciona/.test(target);
       });
-      if (paths.has('/diagnostico-gratis/resultado')) score += 35;
-      if (Array.from(paths).some((path) => path.startsWith('/pagamento'))) score += 35;
+      if (Array.from(paths).some((path) => getAnalyticsPathname(path) === '/')) score += 20;
       if (clickedPayment) score += 25;
       if (sorted.some((event) => event.event_type === 'scroll_depth' && (event.scroll_depth ?? 0) >= 75)) score += 10;
       if (score <= 0) return null;
@@ -646,7 +676,7 @@ export async function getAdminSnapshot(periodDays = 30) {
       refundProcessedCount: refundProcessed.length,
       pageViewsPeriod: periodPageViews.length,
       visitorsPeriod: countDistinct(periodPageViews.map((event) => event.session_id)),
-      ctaClicksPeriod: periodClicks.length,
+      ctaClicksPeriod: countDistinct(periodClicks.map((event) => event.session_id)),
       avgScrollDepth,
       conversionLeadToCustomer: periodLeads.length ? (periodCustomers.size / periodLeads.length) * 100 : 0,
       conversionFreeToCustomer: periodFreeDiagnostics.size
