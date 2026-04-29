@@ -183,6 +183,15 @@ export default async function DashboardPage({
             />
           </div>
           <div className="col-6">
+            <DonutChart
+              title="Paises"
+              items={snapshot.charts.countries.map((item) => ({
+                label: item.label,
+                value: item.value,
+              }))}
+            />
+          </div>
+          <div className="col-6">
             <MiniTable
               title="Origem das visitas"
               columns={['Origem', 'Visitas']}

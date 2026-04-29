@@ -150,6 +150,17 @@ function toTopItems(map: Map<string, number>, limit = 8) {
     .slice(0, limit);
 }
 
+function readMetadataString(
+  metadata: Record<string, unknown> | null | undefined,
+  group: string,
+  key: string
+) {
+  const nested = metadata?.[group];
+  if (!nested || typeof nested !== 'object' || !(key in nested)) return null;
+  const value = (nested as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function latestOf<T extends { created_at: string }>(rows: T[]) {
   return rows.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
 }
@@ -455,6 +466,9 @@ export async function getAdminSnapshot(periodDays = 30) {
   const clickMap = new Map<string, number>();
   const referrerMap = new Map<string, number>();
   const deviceMap = new Map<string, number>();
+  const countryMap = new Map<string, number>();
+  const regionMap = new Map<string, number>();
+  const cityMap = new Map<string, number>();
   const maxScrollByVisit = new Map<string, number>();
 
   for (const event of analyticsEvents) {
@@ -478,6 +492,12 @@ export async function getAdminSnapshot(periodDays = 30) {
     pushTopItem(referrerMap, referrer);
     const device = typeof event.metadata?.device === 'string' ? event.metadata.device : 'desconhecido';
     pushTopItem(deviceMap, device);
+    const country = readMetadataString(event.metadata, 'geo', 'country') ?? 'unknown';
+    const region = readMetadataString(event.metadata, 'geo', 'region');
+    const city = readMetadataString(event.metadata, 'geo', 'city');
+    pushTopItem(countryMap, country === 'unknown' ? 'Pais nao identificado' : country);
+    pushTopItem(regionMap, region ?? 'Regiao nao identificada');
+    pushTopItem(cityMap, city ?? 'Cidade nao identificada');
   }
 
   for (const event of periodClicks) {
@@ -499,6 +519,84 @@ export async function getAdminSnapshot(periodDays = 30) {
   for (const [key, visitors] of analyticsVisitorSetsByDay) {
     analyticsVisitorsByDay.set(key, visitors.size);
   }
+
+  const paidUserIds = new Set(completedPayments.map((payment) => payment.user_id).filter(Boolean));
+  const eventsBySession = new Map<string, AnalyticsEventRow[]>();
+  for (const event of periodAnalytics) {
+    if (!event.session_id) continue;
+    eventsBySession.set(event.session_id, [...(eventsBySession.get(event.session_id) ?? []), event]);
+  }
+
+  const hotLeads = Array.from(eventsBySession.entries())
+    .map(([sessionId, events]) => {
+      const sorted = events.slice().sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
+      const userId = sorted.find((event) => event.user_id)?.user_id ?? null;
+      if (userId && paidUserIds.has(userId)) return null;
+
+      let score = 0;
+      const paths = new Set(sorted.map((event) => event.path ?? ''));
+      const clickedPayment = sorted.some((event) => {
+        const target = `${event.target ?? ''}`.toLowerCase();
+        return event.event_type === 'cta_click' && /pag|checkout|acesso|diagnostico completo/.test(target);
+      });
+      if (paths.has('/diagnostico-gratis/resultado')) score += 35;
+      if (Array.from(paths).some((path) => path.startsWith('/pagamento'))) score += 35;
+      if (clickedPayment) score += 25;
+      if (sorted.some((event) => event.event_type === 'scroll_depth' && (event.scroll_depth ?? 0) >= 75)) score += 10;
+      if (score <= 0) return null;
+
+      const profile = userId ? profileById.get(userId) : null;
+      const last = sorted[sorted.length - 1];
+      return {
+        sessionId,
+        userId,
+        name: profile?.full_name || 'Visitante anonimo',
+        email: profile?.email || '-',
+        score: Math.min(score, 100),
+        lastPath: last.path || '-',
+        lastEventAt: last.created_at,
+        country: readMetadataString(last.metadata, 'geo', 'country') ?? 'Pais nao identificado',
+        city: readMetadataString(last.metadata, 'geo', 'city') ?? null,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b!.score - a!.score || toMs(b!.lastEventAt) - toMs(a!.lastEventAt))
+    .slice(0, 25) as Array<{
+      sessionId: string;
+      userId: string | null;
+      name: string;
+      email: string;
+      score: number;
+      lastPath: string;
+      lastEventAt: string;
+      country: string;
+      city: string | null;
+    }>;
+
+  const abandonmentViews = new Map<string, number>();
+  const abandonmentExits = new Map<string, number>();
+  for (const event of periodPageViews) {
+    pushTopItem(abandonmentViews, event.path || '/');
+  }
+  for (const [, events] of eventsBySession) {
+    const pages = events
+      .filter((event) => event.event_type === 'page_view')
+      .sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
+    const lastPage = pages[pages.length - 1];
+    if (lastPage?.path) pushTopItem(abandonmentExits, lastPage.path);
+  }
+  const abandonment = Array.from(abandonmentViews.entries())
+    .map(([path, views]) => {
+      const exits = abandonmentExits.get(path) ?? 0;
+      return {
+        path,
+        views,
+        exits,
+        rate: views > 0 ? (exits / views) * 100 : 0,
+      };
+    })
+    .sort((a, b) => b.exits - a.exits || b.rate - a.rate)
+    .slice(0, 12);
 
   const revenueCurrent = seriesFromMap(currentKeys, revenueByDay);
   const revenuePrevious = seriesFromMap(previousKeys, revenueByDay);
@@ -565,6 +663,13 @@ export async function getAdminSnapshot(periodDays = 30) {
       topClicks: toTopItems(clickMap),
       topReferrers: toTopItems(referrerMap),
       devices: toTopItems(deviceMap),
+      countries: toTopItems(countryMap),
+      regions: toTopItems(regionMap),
+      cities: toTopItems(cityMap),
+    },
+    tracking: {
+      hotLeads,
+      abandonment,
     },
     series: {
       revenue: {
@@ -628,6 +733,7 @@ export async function getAdminSnapshot(periodDays = 30) {
       freeDiagnostics,
       sessions,
       reports,
+      analyticsEvents,
       profileById,
     },
   };

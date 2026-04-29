@@ -8,6 +8,7 @@ type NavProps = {
     | 'dashboard'
     | 'clients'
     | 'leads'
+    | 'tracking'
     | 'payments'
     | 'refunds'
     | 'stripe'
@@ -29,6 +30,7 @@ export function Nav({ current }: NavProps) {
     { href: '/', label: 'Dashboard', key: 'dashboard' },
     { href: '/clientes', label: 'Clientes', key: 'clients' },
     { href: '/leads', label: 'Leads', key: 'leads' },
+    { href: '/rastreamento', label: 'Rastreamento', key: 'tracking' },
     { href: '/pagamentos', label: 'Pagamentos', key: 'payments' },
     { href: '/reembolsos', label: 'Reembolsos', key: 'refunds' },
   ] as const;
