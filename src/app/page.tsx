@@ -12,9 +12,9 @@ function parsePeriodDays(input: unknown) {
   const raw = typeof input === 'string' ? input.trim() : '';
   if (raw === 'all') return 0;
   const days = Number.parseInt(raw, 10);
-  if (!Number.isFinite(days)) return 30;
-  if (days === 7 || days === 30 || days === 90) return days;
-  return 30;
+  if (!Number.isFinite(days)) return 1;
+  if (days === 1 || days === 7 || days === 30 || days === 90) return days;
+  return 1;
 }
 
 export default async function DashboardPage({
@@ -42,7 +42,9 @@ export default async function DashboardPage({
             <div className="section-title" style={{ marginBottom: 10 }}>Dashboard</div>
             <div className="muted">
               {periodDays > 0
-                ? `Visao de negocio dos ultimos ${periodDays} dias (comparado ao periodo anterior).`
+                ? periodDays === 1
+                  ? 'Visao de negocio de hoje (comparado a ontem).'
+                  : `Visao de negocio dos ultimos ${periodDays} dias (comparado ao periodo anterior).`
                 : 'Visao de negocio de todo o periodo registrado.'}
             </div>
           </div>
@@ -56,6 +58,7 @@ export default async function DashboardPage({
         </div>
 
         <div className="segmented" role="tablist" aria-label="Periodo">
+          <a className={`seg-btn ${periodDays === 1 ? 'active' : ''}`} href="/?days=1">Hoje</a>
           <a className={`seg-btn ${periodDays === 7 ? 'active' : ''}`} href="/?days=7">7 dias</a>
           <a className={`seg-btn ${periodDays === 30 ? 'active' : ''}`} href="/?days=30">30 dias</a>
           <a className={`seg-btn ${periodDays === 90 ? 'active' : ''}`} href="/?days=90">90 dias</a>
@@ -142,15 +145,9 @@ export default async function DashboardPage({
           </div>
           <div className="col-4">
             <div className="card stat-card">
-              <div className="eyebrow">Receita media por venda</div>
-              <div className="stat-value">
-                {snapshot.metrics.periodSales > 0
-                  ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                      snapshot.metrics.revenueBrutaPeriodCents / snapshot.metrics.periodSales / 100
-                    )
-                  : 'R$ 0,00'}
-              </div>
-              <div className="muted stat-hint">Media simples por venda concluida no periodo.</div>
+              <div className="eyebrow">Reembolsos pendentes</div>
+              <div className="stat-value">{snapshot.metrics.refundPendingCount}</div>
+              <div className="muted stat-hint">Pedidos que precisam de analise manual.</div>
             </div>
           </div>
           <div className="col-6">
@@ -202,7 +199,8 @@ export default async function DashboardPage({
               title="Status da base de clientes"
               items={[
                 { label: 'Ativos', value: snapshot.customers.length },
-                { label: 'Refund pendente', value: snapshot.refundPendingCustomers.length },
+                { label: 'Bloqueados', value: snapshot.blockedCustomers.length },
+                { label: 'Reembolso pendente', value: snapshot.refundPendingCustomers.length },
                 { label: 'Reembolsados', value: snapshot.refundedCustomers.length },
               ]}
             />

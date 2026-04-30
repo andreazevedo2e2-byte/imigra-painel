@@ -433,7 +433,9 @@ export async function getAdminSnapshot(periodDays = 30) {
     );
 
     // Important: keep refunded/pending customers out of the "Leads" bucket.
-    const status = hasActiveCompletedPayment
+    const status = hasActiveCompletedPayment && profile.has_paid === false
+      ? 'bloqueado'
+      : hasActiveCompletedPayment
       ? 'ativo'
       : hasRefundPending
         ? 'refund_pendente'
@@ -465,6 +467,7 @@ export async function getAdminSnapshot(periodDays = 30) {
 
   const allRows = sortRowsByRecency(profiles.map(buildLeadRow));
   const customerRows = sortRowsByRecency(allRows.filter((row) => row.status === 'ativo'));
+  const blockedCustomers = sortRowsByRecency(allRows.filter((row) => row.status === 'bloqueado'));
   const refundPendingCustomers = sortRowsByRecency(
     allRows.filter((row) => row.status === 'refund_pendente')
   );
@@ -628,6 +631,7 @@ export async function getAdminSnapshot(periodDays = 30) {
     .map(([sessionId, events]) => {
       const sorted = events.slice().sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
       const userId = sorted.find((event) => event.user_id)?.user_id ?? null;
+      if (!userId) return null;
       if (userId && paidUserIds.has(userId)) return null;
 
       let score = 0;
@@ -646,7 +650,7 @@ export async function getAdminSnapshot(periodDays = 30) {
       return {
         sessionId,
         userId,
-        name: profile?.full_name || 'Visitante anonimo',
+        name: profile?.full_name || 'Usuario identificado',
         email: profile?.email || '-',
         score: Math.min(score, 100),
         lastPath: last.path || '-',
@@ -903,6 +907,7 @@ export async function getAdminSnapshot(periodDays = 30) {
       },
     },
     customers: customerRows,
+    blockedCustomers,
     refundPendingCustomers,
     refundedCustomers,
     leads: leadRows,

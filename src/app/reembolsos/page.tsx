@@ -245,7 +245,7 @@ export default async function ReembolsosPage({
         <div className="card highlight-panel page-head">
           <div>
             <div className="page-title">Reembolsos</div>
-            <div className="page-subtitle">Fila operacional (fonte: Supabase).</div>
+            <div className="page-subtitle">Pedidos recebidos e aprovação manual.</div>
           </div>
           <div className="badge-row">
             <span className="pill warn">Pendentes: <strong>{data.totals.pending}</strong></span>
@@ -305,17 +305,18 @@ export default async function ReembolsosPage({
                       {row.error ? <div className="pill danger" style={{ marginTop: 8 }}>Erro anterior: {row.error}</div> : null}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <form action={approveRefund}>
-                        <input type="hidden" name="refund_request_id" value={row.id} />
-                        <button
-                          className="btn btn-primary"
-                          type="submit"
-                          disabled={row.isLate || row.rawStatus === 'processed'}
-                          style={{ opacity: row.isLate || row.rawStatus === 'processed' ? 0.45 : 1 }}
-                        >
-                          Aprovar
-                        </button>
-                      </form>
+                      {row.rawStatus === 'processed' ? (
+                        <span className="pill success">Aprovado</span>
+                      ) : row.isLate ? (
+                        <span className="pill danger">Fora do prazo</span>
+                      ) : (
+                        <form action={approveRefund}>
+                          <input type="hidden" name="refund_request_id" value={row.id} />
+                          <button className="btn btn-primary" type="submit">
+                            Aprovar
+                          </button>
+                        </form>
+                      )}
                     </td>
                   </tr>
                 ))}

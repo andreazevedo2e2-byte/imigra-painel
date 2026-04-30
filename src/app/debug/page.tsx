@@ -82,7 +82,7 @@ async function syncRefundWithStripe(stripe: Stripe, payment: PaymentRow, refund:
         status: 'failed',
         stripe_refund_id: stripeRefund.id,
         processed_at: new Date().toISOString(),
-        error_message: stripeRefund.failure_reason ?? 'Refund falhou ou foi cancelado na Stripe.',
+        error_message: stripeRefund.failure_reason ?? 'Reembolso falhou ou foi cancelado na Stripe.',
       })
       .eq('id', refund.id);
 
@@ -268,7 +268,7 @@ export default async function DebugPage({
             <StatCard label="Payments" value={String(snapshot.counts.payments)} />
           </div>
           <div className="col-3">
-            <StatCard label="Refund requests" value={String(snapshot.counts.refundRequests)} />
+            <StatCard label="Pedidos de reembolso" value={String(snapshot.counts.refundRequests)} />
           </div>
           <div className="col-3">
             <StatCard label="Project ref" value={supabaseInfo.projectRef} />

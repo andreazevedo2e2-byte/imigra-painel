@@ -14,8 +14,14 @@ function parsePeriodDays(input: unknown) {
   const raw = typeof input === 'string' ? input.trim() : '';
   if (raw === 'all') return 0;
   const days = Number.parseInt(raw, 10);
-  if (days === 7 || days === 30 || days === 90) return days;
-  return 30;
+  if (days === 1 || days === 7 || days === 30 || days === 90) return days;
+  return 1;
+}
+
+function formatPriority(score: number) {
+  if (score >= 70) return `Alta (${score}/100)`;
+  if (score >= 40) return `M?dia (${score}/100)`;
+  return `Baixa (${score}/100)`;
 }
 
 export default async function RastreamentoPage({
@@ -39,7 +45,9 @@ export default async function RastreamentoPage({
             <div className="page-title">Rastreamento</div>
             <div className="page-subtitle">
               {periodDays > 0
-                ? `Tráfego da landing e passagem pelo checkout nos últimos ${periodDays} dias. Dados aproximados, sem armazenar IP.`
+                ? periodDays === 1
+                  ? 'Tráfego da landing e passagem pelo checkout hoje. Dados aproximados, sem armazenar IP.'
+                  : `Tráfego da landing e passagem pelo checkout nos últimos ${periodDays} dias. Dados aproximados, sem armazenar IP.`
                 : 'Tráfego da landing e passagem pelo checkout em todo o período registrado. Dados aproximados, sem armazenar IP.'}
             </div>
           </div>
@@ -54,6 +62,7 @@ export default async function RastreamentoPage({
         </div>
 
         <div className="segmented" role="tablist" aria-label="Periodo">
+          <Link className={`seg-btn ${periodDays === 1 ? 'active' : ''}`} href="/rastreamento?days=1">Hoje</Link>
           <Link className={`seg-btn ${periodDays === 7 ? 'active' : ''}`} href="/rastreamento?days=7">7 dias</Link>
           <Link className={`seg-btn ${periodDays === 30 ? 'active' : ''}`} href="/rastreamento?days=30">30 dias</Link>
           <Link className={`seg-btn ${periodDays === 90 ? 'active' : ''}`} href="/rastreamento?days=90">90 dias</Link>
@@ -206,7 +215,7 @@ export default async function RastreamentoPage({
               rows={snapshot.tracking.hotLeads.map((lead) => [
                 lead.name,
                 lead.email,
-                `${lead.score}/100`,
+                formatPriority(lead.score),
                 lead.lastPath,
                 lead.city ? `${lead.city}, ${lead.country}` : lead.country,
                 formatDateTime(lead.lastEventAt),

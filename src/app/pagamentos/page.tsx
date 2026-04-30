@@ -68,6 +68,11 @@ export default async function PagamentosPage({
   const rows = snapshot.raw.payments
     .slice()
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  const refundsByPayment = new Map<string, Array<(typeof snapshot.raw.refunds)[number]>>();
+  for (const refund of snapshot.raw.refunds) {
+    if (!refund.payment_id) continue;
+    refundsByPayment.set(refund.payment_id, [...(refundsByPayment.get(refund.payment_id) ?? []), refund]);
+  }
 
   return (
     <>
@@ -76,12 +81,12 @@ export default async function PagamentosPage({
         <div className="card highlight-panel page-head">
           <div>
             <div className="page-title">Pagamentos</div>
-            <div className="page-subtitle">Fonte de verdade: tabela payments do Supabase.</div>
+            <div className="page-subtitle">Vendas, status de pagamento e pedidos de reembolso.</div>
           </div>
           <div className="badge-row">
             <span className="pill">Vendas concluidas: <strong>{snapshot.metrics.completedSales}</strong></span>
             <span className="pill success">Receita bruta: <strong>{formatCurrencyBRL(snapshot.metrics.revenueBrutaCents / 100)}</strong></span>
-            <span className="pill warn">Refund pendente: <strong>{snapshot.metrics.refundPendingCount}</strong></span>
+            <span className="pill warn">Reembolso pendente: <strong>{snapshot.metrics.refundPendingCount}</strong></span>
           </div>
         </div>
 
@@ -96,7 +101,7 @@ export default async function PagamentosPage({
             <StatCard label="Receita bruta" value={formatCurrencyBRL(snapshot.metrics.revenueBrutaCents / 100)} />
           </div>
           <div className="col-3">
-            <StatCard label="Refund pendente" value={String(snapshot.metrics.refundPendingCount)} />
+            <StatCard label="Reembolso pendente" value={String(snapshot.metrics.refundPendingCount)} />
           </div>
           <div className="col-3">
             <StatCard label="Reembolsos concluidos" value={String(snapshot.metrics.refundProcessedCount)} />
@@ -114,7 +119,6 @@ export default async function PagamentosPage({
                   <th>Valor</th>
                   <th>Status</th>
                   <th>Compra</th>
-                  <th>Fee plataforma</th>
                   <th>Acoes</th>
                 </tr>
               </thead>
@@ -122,7 +126,17 @@ export default async function PagamentosPage({
                 {rows.map((payment) => {
                   const profile = payment.user_id ? snapshot.raw.profileById.get(payment.user_id) : null;
                   const amountCents = getPaymentAmountCents(payment);
-                  const fee = (payment as any).application_fee_cents as number | null | undefined;
+                  const linkedRefunds = refundsByPayment.get(payment.id) ?? [];
+                  const hasProcessedRefund =
+                    payment.status === 'refunded' || linkedRefunds.some((refund) => refund.status === 'processed');
+                  const hasPendingRefund =
+                    payment.status === 'refund_pending' ||
+                    linkedRefunds.some((refund) => refund.status === 'pending' || refund.status === 'processing');
+                  const displayStatus = hasProcessedRefund
+                    ? 'Reembolsado'
+                    : hasPendingRefund
+                      ? 'Reembolso em analise'
+                      : formatBusinessStatus(payment.status);
                   return (
                     <tr key={payment.id}>
                       <td>
@@ -136,12 +150,15 @@ export default async function PagamentosPage({
                       </td>
                       <td className="muted">{profile?.email || 'Sem e-mail'}</td>
                       <td>{formatCurrencyBRL(amountCents / 100)}</td>
-                      <td>{formatBusinessStatus(payment.status)}</td>
+                      <td>{displayStatus}</td>
                       <td className="muted">{formatDateTime(payment.created_at)}</td>
-                      <td className="muted">{typeof fee === 'number' ? formatCurrencyBRL(fee / 100) : '—'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {payment.status === 'completed' ? (
+                          {hasProcessedRefund ? (
+                            <span className="pill danger">Reembolsado</span>
+                          ) : hasPendingRefund ? (
+                            <span className="pill warn">Em analise</span>
+                          ) : payment.status === 'completed' ? (
                             <form action={requestRefund}>
                               <input type="hidden" name="payment_id" value={payment.id} />
                               <button className="btn btn-primary" type="submit">
@@ -158,7 +175,7 @@ export default async function PagamentosPage({
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="muted">Nenhum pagamento encontrado.</td>
+                    <td colSpan={6} className="muted">Nenhum pagamento encontrado.</td>
                   </tr>
                 ) : null}
               </tbody>

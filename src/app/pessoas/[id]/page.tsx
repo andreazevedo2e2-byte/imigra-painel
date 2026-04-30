@@ -151,7 +151,7 @@ export default async function PessoaPage({
   const badge = isRefunded
     ? { label: 'Reembolsado / acesso cancelado', tone: 'pill danger' }
     : refundPending
-      ? { label: 'Refund pendente', tone: 'pill warn' }
+      ? { label: 'Reembolso pendente', tone: 'pill warn' }
       : isCustomer
         ? { label: 'Cliente pagante', tone: 'pill success' }
         : { label: 'Lead', tone: 'pill warn' };
