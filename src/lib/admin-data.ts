@@ -129,6 +129,7 @@ function deltaPercent(current: number, previous: number) {
 
 function isWithinDays(value: string | null | undefined, days: number) {
   if (!value) return false;
+  if (days <= 0) return true;
   const since = Date.now() - days * 24 * 60 * 60 * 1000;
   return new Date(value).getTime() >= since;
 }
@@ -161,6 +162,27 @@ function readMetadataString(
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function readMetadataTopLevelString(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string
+) {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function getDeviceLabel(metadata: Record<string, unknown> | null | undefined) {
+  const raw =
+    readMetadataTopLevelString(metadata, 'device_type') ??
+    readMetadataTopLevelString(metadata, 'device') ??
+    '';
+  const value = raw.toLowerCase();
+
+  if (value === 'mobile' || value === 'celular') return 'Celular';
+  if (value === 'tablet') return 'Tablet';
+  if (value === 'desktop' || value === 'notebook') return 'Desktop / notebook';
+  return 'Nao identificado';
+}
+
 function getAnalyticsPathname(path: string | null | undefined) {
   if (!path) return '/';
   try {
@@ -174,8 +196,21 @@ function isTrackedLandingEvent(event: AnalyticsEventRow) {
   return getAnalyticsPathname(event.path) === '/';
 }
 
+function isCheckoutStartedEvent(event: AnalyticsEventRow) {
+  return event.event_type === 'checkout_started';
+}
+
 function latestOf<T extends { created_at: string }>(rows: T[]) {
   return rows.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+}
+
+function sortRowsByRecency<T extends { lastEventAt: string | null; createdAt: string }>(rows: T[]) {
+  return rows
+    .slice()
+    .sort(
+      (a, b) =>
+        toMs(b.lastEventAt ?? b.createdAt) - toMs(a.lastEventAt ?? a.createdAt)
+    );
 }
 
 function getPaymentRefundState(payment: PaymentRow, refunds: RefundRow[]) {
@@ -428,16 +463,36 @@ export async function getAdminSnapshot(periodDays = 30) {
     };
   };
 
-  const allRows = profiles.map(buildLeadRow);
-  const customerRows = allRows.filter((row) => row.status === 'ativo');
-  const refundPendingCustomers = allRows.filter((row) => row.status === 'refund_pendente');
-  const refundedCustomers = allRows.filter((row) => row.status === 'reembolsado');
-  const leadRows = allRows.filter((row) => row.status === 'lead');
+  const allRows = sortRowsByRecency(profiles.map(buildLeadRow));
+  const customerRows = sortRowsByRecency(allRows.filter((row) => row.status === 'ativo'));
+  const refundPendingCustomers = sortRowsByRecency(
+    allRows.filter((row) => row.status === 'refund_pendente')
+  );
+  const refundedCustomers = sortRowsByRecency(
+    allRows.filter((row) => row.status === 'reembolsado')
+  );
+  const leadRows = sortRowsByRecency(allRows.filter((row) => row.status === 'lead'));
 
   const currentEndDayMs = startOfUtcDayMs(Date.now());
-  const currentKeys = buildDayKeys(currentEndDayMs, periodDays);
-  const previousEndDayMs = currentEndDayMs - periodDays * DAY_MS;
-  const previousKeys = buildDayKeys(previousEndDayMs, periodDays);
+  const knownDateMs = [
+    ...profiles.map((row) => row.created_at),
+    ...payments.map((row) => row.created_at),
+    ...refunds.map((row) => row.created_at),
+    ...freeDiagnostics.map((row) => row.created_at),
+    ...sessions.map((row) => row.created_at),
+    ...reports.map((row) => row.created_at),
+    ...analyticsEvents.map((row) => row.created_at),
+  ]
+    .map(toMs)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const firstKnownDayMs = knownDateMs.length
+    ? startOfUtcDayMs(Math.min(...knownDateMs))
+    : currentEndDayMs;
+  const allPeriodDays = Math.max(1, Math.round((currentEndDayMs - firstKnownDayMs) / DAY_MS) + 1);
+  const chartPeriodDays = periodDays > 0 ? periodDays : allPeriodDays;
+  const currentKeys = buildDayKeys(currentEndDayMs, chartPeriodDays);
+  const previousEndDayMs = currentEndDayMs - chartPeriodDays * DAY_MS;
+  const previousKeys = periodDays > 0 ? buildDayKeys(previousEndDayMs, chartPeriodDays) : [];
 
   const revenueByDay = new Map<string, number>();
   const salesByDay = new Map<string, number>();
@@ -480,7 +535,11 @@ export async function getAdminSnapshot(periodDays = 30) {
   const analyticsByDay = new Map<string, number>();
   const analyticsVisitorSetsByDay = new Map<string, Set<string>>();
   const trackedAnalyticsEvents = analyticsEvents.filter(isTrackedLandingEvent);
+  const checkoutAnalyticsEvents = analyticsEvents.filter(isCheckoutStartedEvent);
   const periodAnalytics = trackedAnalyticsEvents.filter((event) => isWithinDays(event.created_at, periodDays));
+  const periodCheckoutEvents = checkoutAnalyticsEvents.filter((event) =>
+    isWithinDays(event.created_at, periodDays)
+  );
   const periodPageViews = periodAnalytics.filter((event) => event.event_type === 'page_view');
   const periodClicks = periodAnalytics.filter((event) => event.event_type === 'cta_click');
   const periodScrolls = periodAnalytics.filter((event) => event.event_type === 'scroll_depth');
@@ -521,8 +580,7 @@ export async function getAdminSnapshot(periodDays = 30) {
       ? event.referrer
       : 'Direto / interno';
     pushTopItem(referrerMap, referrer);
-    const device = typeof event.metadata?.device === 'string' ? event.metadata.device : 'desconhecido';
-    pushTopItem(deviceMap, device);
+    pushTopItem(deviceMap, getDeviceLabel(event.metadata));
     const country = readMetadataString(event.metadata, 'geo', 'country') ?? 'unknown';
     const region = readMetadataString(event.metadata, 'geo', 'region');
     const city = readMetadataString(event.metadata, 'geo', 'city');
@@ -636,6 +694,64 @@ export async function getAdminSnapshot(periodDays = 30) {
     .sort((a, b) => b.exits - a.exits || b.rate - a.rate)
     .slice(0, 12);
 
+  const convertedCheckoutSessionIds = new Set(
+    payments
+      .filter((payment) =>
+        !!payment.stripe_session_id &&
+        ['completed', 'refund_pending', 'refunded'].includes(payment.status ?? '')
+      )
+      .map((payment) => payment.stripe_session_id!)
+  );
+
+  const checkoutGraceWindowMs = 15 * 60 * 1000;
+  const nowMs = Date.now();
+  const checkoutStartedByDay = new Map<string, number>();
+  const checkoutAbandonedByDay = new Map<string, number>();
+
+  type CheckoutAbandonmentRow = {
+    sessionId: string;
+    userId: string | null;
+    name: string;
+    email: string;
+    startedAt: string;
+    ageMinutes: number;
+    lastIntent: string;
+  };
+
+  const checkoutAbandonedRows = periodCheckoutEvents
+    .map((event) => {
+      const stripeSessionId =
+        readMetadataTopLevelString(event.metadata, 'stripe_session_id') ?? event.session_id ?? event.id;
+      const createdMs = toMs(event.created_at);
+      const ageMinutes = Math.max(0, Math.round((nowMs - createdMs) / (60 * 1000)));
+      const hasConverted = convertedCheckoutSessionIds.has(stripeSessionId);
+      const insideGraceWindow = nowMs - createdMs < checkoutGraceWindowMs;
+      const profile = event.user_id ? profileById.get(event.user_id) : null;
+      const nextPath = readMetadataTopLevelString(event.metadata, 'next_path');
+
+      const dayKey = toUtcDayKey(event.created_at);
+      if (dayKey) {
+        checkoutStartedByDay.set(dayKey, (checkoutStartedByDay.get(dayKey) ?? 0) + 1);
+        if (!hasConverted && !insideGraceWindow) {
+          checkoutAbandonedByDay.set(dayKey, (checkoutAbandonedByDay.get(dayKey) ?? 0) + 1);
+        }
+      }
+
+      if (hasConverted || insideGraceWindow) return null;
+
+      return {
+        sessionId: stripeSessionId,
+        userId: event.user_id ?? null,
+        name: profile?.full_name || 'Usuario identificado',
+        email: profile?.email || '-',
+        startedAt: event.created_at,
+        ageMinutes,
+        lastIntent: nextPath || '/diagnostico',
+      } satisfies CheckoutAbandonmentRow;
+    })
+    .filter(Boolean)
+    .sort((a, b) => toMs(b!.startedAt) - toMs(a!.startedAt)) as CheckoutAbandonmentRow[];
+
   const revenueCurrent = seriesFromMap(currentKeys, revenueByDay);
   const revenuePrevious = seriesFromMap(previousKeys, revenueByDay);
   const salesCurrent = seriesFromMap(currentKeys, salesByDay);
@@ -650,6 +766,10 @@ export async function getAdminSnapshot(periodDays = 30) {
   const pageViewsPrevious = seriesFromMap(previousKeys, analyticsByDay);
   const visitorsCurrent = seriesFromMap(currentKeys, analyticsVisitorsByDay);
   const visitorsPrevious = seriesFromMap(previousKeys, analyticsVisitorsByDay);
+  const checkoutStartedCurrent = seriesFromMap(currentKeys, checkoutStartedByDay);
+  const checkoutStartedPrevious = seriesFromMap(previousKeys, checkoutStartedByDay);
+  const checkoutAbandonedCurrent = seriesFromMap(currentKeys, checkoutAbandonedByDay);
+  const checkoutAbandonedPrevious = seriesFromMap(previousKeys, checkoutAbandonedByDay);
 
   const revenueCurrentTotal = sumSeries(revenueCurrent);
   const revenuePreviousTotal = sumSeries(revenuePrevious);
@@ -665,6 +785,10 @@ export async function getAdminSnapshot(periodDays = 30) {
   const pageViewsPreviousTotal = sumSeries(pageViewsPrevious);
   const visitorsCurrentTotal = sumSeries(visitorsCurrent);
   const visitorsPreviousTotal = sumSeries(visitorsPrevious);
+  const checkoutStartedCurrentTotal = sumSeries(checkoutStartedCurrent);
+  const checkoutStartedPreviousTotal = sumSeries(checkoutStartedPrevious);
+  const checkoutAbandonedCurrentTotal = sumSeries(checkoutAbandonedCurrent);
+  const checkoutAbandonedPreviousTotal = sumSeries(checkoutAbandonedPrevious);
 
   return {
     counts: {
@@ -686,6 +810,9 @@ export async function getAdminSnapshot(periodDays = 30) {
       visitorsPeriod: countDistinct(periodPageViews.map((event) => event.session_id)),
       ctaClicksPeriod: countDistinct(periodClicks.map((event) => event.session_id)),
       avgScrollDepth,
+      checkoutStartedPeriod: periodCheckoutEvents.length,
+      checkoutAbandonedPeriod: checkoutAbandonedRows.length,
+      checkoutRecoveredPeriod: Math.max(0, periodCheckoutEvents.length - checkoutAbandonedRows.length),
       conversionLeadToCustomer: periodLeads.length ? (periodCustomers.size / periodLeads.length) * 100 : 0,
       conversionFreeToCustomer: periodFreeDiagnostics.size
         ? (periodCustomers.size / periodFreeDiagnostics.size) * 100
@@ -708,6 +835,7 @@ export async function getAdminSnapshot(periodDays = 30) {
     tracking: {
       hotLeads,
       abandonment,
+      checkoutAbandoned: checkoutAbandonedRows.slice(0, 50),
     },
     series: {
       revenue: {
@@ -758,6 +886,20 @@ export async function getAdminSnapshot(periodDays = 30) {
         currentTotal: visitorsCurrentTotal,
         previousTotal: visitorsPreviousTotal,
         delta: deltaPercent(visitorsCurrentTotal, visitorsPreviousTotal),
+      },
+      checkoutStarted: {
+        current: checkoutStartedCurrent,
+        previous: checkoutStartedPrevious,
+        currentTotal: checkoutStartedCurrentTotal,
+        previousTotal: checkoutStartedPreviousTotal,
+        delta: deltaPercent(checkoutStartedCurrentTotal, checkoutStartedPreviousTotal),
+      },
+      checkoutAbandoned: {
+        current: checkoutAbandonedCurrent,
+        previous: checkoutAbandonedPrevious,
+        currentTotal: checkoutAbandonedCurrentTotal,
+        previousTotal: checkoutAbandonedPreviousTotal,
+        delta: deltaPercent(checkoutAbandonedCurrentTotal, checkoutAbandonedPreviousTotal),
       },
     },
     customers: customerRows,

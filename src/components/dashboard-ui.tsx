@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 type StatCardProps = {
   label: string;
   value: string;
@@ -193,7 +195,7 @@ export function BarChart({ title, items, emptyLabel = 'Sem dados suficientes ain
 }
 
 type MiniTableProps = {
-  title: string;
+  title: ReactNode;
   columns: string[];
   rows: string[][];
   emptyLabel?: string;
