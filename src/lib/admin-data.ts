@@ -620,58 +620,11 @@ export async function getAdminSnapshot(periodDays = 30) {
     analyticsVisitorsByDay.set(key, visitors.size);
   }
 
-  const paidUserIds = new Set(completedPayments.map((payment) => payment.user_id).filter(Boolean));
   const eventsBySession = new Map<string, AnalyticsEventRow[]>();
   for (const event of periodAnalytics) {
     if (!event.session_id) continue;
     eventsBySession.set(event.session_id, [...(eventsBySession.get(event.session_id) ?? []), event]);
   }
-
-  const hotLeads = Array.from(eventsBySession.entries())
-    .map(([sessionId, events]) => {
-      const sorted = events.slice().sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
-      const userId = sorted.find((event) => event.user_id)?.user_id ?? null;
-      if (!userId) return null;
-      if (userId && paidUserIds.has(userId)) return null;
-
-      let score = 0;
-      const paths = new Set(sorted.map((event) => event.path ?? ''));
-      const clickedPayment = sorted.some((event) => {
-        const target = `${event.target ?? ''}`.toLowerCase();
-        return event.event_type === 'cta_click' && /diagnostico gratis|entrar|precos|como funciona/.test(target);
-      });
-      if (Array.from(paths).some((path) => getAnalyticsPathname(path) === '/')) score += 20;
-      if (clickedPayment) score += 25;
-      if (sorted.some((event) => event.event_type === 'scroll_depth' && (event.scroll_depth ?? 0) >= 75)) score += 10;
-      if (score <= 0) return null;
-
-      const profile = userId ? profileById.get(userId) : null;
-      const last = sorted[sorted.length - 1];
-      return {
-        sessionId,
-        userId,
-        name: profile?.full_name || 'Usuario identificado',
-        email: profile?.email || '-',
-        score: Math.min(score, 100),
-        lastPath: last.path || '-',
-        lastEventAt: last.created_at,
-        country: readMetadataString(last.metadata, 'geo', 'country') ?? 'Pais nao identificado',
-        city: readMetadataString(last.metadata, 'geo', 'city') ?? null,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b!.score - a!.score || toMs(b!.lastEventAt) - toMs(a!.lastEventAt))
-    .slice(0, 25) as Array<{
-      sessionId: string;
-      userId: string | null;
-      name: string;
-      email: string;
-      score: number;
-      lastPath: string;
-      lastEventAt: string;
-      country: string;
-      city: string | null;
-    }>;
 
   const abandonmentViews = new Map<string, number>();
   const abandonmentExits = new Map<string, number>();
@@ -741,7 +694,7 @@ export async function getAdminSnapshot(periodDays = 30) {
         }
       }
 
-      if (hasConverted || insideGraceWindow) return null;
+      if (hasConverted || insideGraceWindow || !event.user_id) return null;
 
       return {
         sessionId: stripeSessionId,
@@ -755,6 +708,21 @@ export async function getAdminSnapshot(periodDays = 30) {
     })
     .filter(Boolean)
     .sort((a, b) => toMs(b!.startedAt) - toMs(a!.startedAt)) as CheckoutAbandonmentRow[];
+
+  const hotLeads = checkoutAbandonedRows
+    .map((lead) => ({
+      sessionId: lead.sessionId,
+      userId: lead.userId,
+      name: lead.name,
+      email: lead.email,
+      score: 100,
+      tag: 'Remarketing: abriu checkout e não comprou',
+      lastPath: lead.lastIntent,
+      lastEventAt: lead.startedAt,
+      country: 'Identificado no checkout',
+      city: null as string | null,
+    }))
+    .slice(0, 50);
 
   const revenueCurrent = seriesFromMap(currentKeys, revenueByDay);
   const revenuePrevious = seriesFromMap(previousKeys, revenueByDay);

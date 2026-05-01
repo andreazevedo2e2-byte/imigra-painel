@@ -18,12 +18,6 @@ function parsePeriodDays(input: unknown) {
   return 1;
 }
 
-function formatPriority(score: number) {
-  if (score >= 70) return `Alta (${score}/100)`;
-  if (score >= 40) return `M?dia (${score}/100)`;
-  return `Baixa (${score}/100)`;
-}
-
 export default async function RastreamentoPage({
   searchParams,
 }: {
@@ -57,7 +51,7 @@ export default async function RastreamentoPage({
             <span className="pill warn">Checkout iniciou: <strong>{snapshot.metrics.checkoutStartedPeriod}</strong></span>
             <span className="pill danger">Checkout sem pagar: <strong>{snapshot.metrics.checkoutAbandonedPeriod}</strong></span>
             <span className="pill success">Scroll medio: <strong>{snapshot.metrics.avgScrollDepth.toFixed(0)}%</strong></span>
-            <span className="pill">Leads quentes: <strong>{snapshot.tracking.hotLeads.length}</strong></span>
+            <span className="pill">Remarketing: <strong>{snapshot.tracking.hotLeads.length}</strong></span>
           </div>
         </div>
 
@@ -138,11 +132,11 @@ export default async function RastreamentoPage({
           <div className="col-4">
             <div className="card stat-card">
               <div className="eyebrow" style={{ display: 'flex', alignItems: 'center' }}>
-                Leads quentes
-                <HelpHint label="Visitantes com sinais fortes de interesse: leitura profunda, clique em CTA e navegacao consistente. Serve para priorizacao comercial." />
+                Leads para remarketing
+                <HelpHint label="Usuarios identificados que abriram o checkout e nao finalizaram a compra apos alguns minutos. Visitante anonimo nao entra aqui." />
               </div>
               <div className="stat-value">{snapshot.tracking.hotLeads.length}</div>
-              <div className="muted stat-hint">Indicador de prioridade comercial.</div>
+              <div className="muted stat-hint">Abriram checkout e nao compraram.</div>
             </div>
           </div>
           <div className="col-4">
@@ -207,20 +201,19 @@ export default async function RastreamentoPage({
             <MiniTable
               title={
                 <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  Leads quentes
-                  <HelpHint label="Prioridade mais alta significa comportamento mais proximo de compra. Hoje o score usa profundidade de leitura, clique em CTA e consistencia da visita." />
+                  Leads para remarketing
+                  <HelpHint label="Lead quente aqui significa: usuario logado abriu o checkout, mas nao existe pagamento concluido vinculado a ele." />
                 </span>
               }
-              columns={['Pessoa', 'Contato', 'Prioridade', 'Ultima pagina', 'Local aproximado', 'Ultimo evento']}
+              columns={['Pessoa', 'Contato', 'Tag', 'Destino esperado', 'Ultimo evento']}
               rows={snapshot.tracking.hotLeads.map((lead) => [
                 lead.name,
                 lead.email,
-                formatPriority(lead.score),
+                lead.tag,
                 lead.lastPath,
-                lead.city ? `${lead.city}, ${lead.country}` : lead.country,
                 formatDateTime(lead.lastEventAt),
               ])}
-              emptyLabel="Nenhum lead quente identificado no periodo."
+              emptyLabel="Nenhum lead para remarketing identificado no periodo."
             />
           </div>
         </div>

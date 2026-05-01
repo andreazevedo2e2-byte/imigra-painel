@@ -27,6 +27,8 @@ export default async function LeadsPage({
     return true;
   });
 
+  const remarketingByUserId = new Map(snapshot.tracking.hotLeads.map((lead) => [lead.userId, lead]));
+  const remarketingLeadCount = openLeads.filter((lead) => remarketingByUserId.has(lead.id)).length;
   const openLeadCount = openLeads.length;
   const freeCompletedCount = openLeads.filter((lead) => lead.hasFreeDiagnostic).length;
   const freeNotCompletedCount = Math.max(0, openLeadCount - freeCompletedCount);
@@ -44,6 +46,7 @@ export default async function LeadsPage({
             <span className="pill">Leads abertos: <strong>{openLeadCount}</strong></span>
             <span className="pill success">Gratis concluido: <strong>{freeCompletedCount}</strong></span>
             <span className="pill warn">Gratis pendente: <strong>{freeNotCompletedCount}</strong></span>
+            <span className="pill danger">Remarketing: <strong>{remarketingLeadCount}</strong></span>
           </div>
         </div>
 
@@ -56,6 +59,9 @@ export default async function LeadsPage({
           </div>
           <div className="col-4">
             <StatCard label="Gratis pendente" value={String(freeNotCompletedCount)} />
+          </div>
+          <div className="col-4">
+            <StatCard label="Remarketing" value={String(remarketingLeadCount)} hint="Abriu checkout e nao comprou" />
           </div>
         </div>
 
@@ -73,24 +79,36 @@ export default async function LeadsPage({
                 <tr>
                   <th>Lead</th>
                   <th>Contato</th>
+                  <th>Tag</th>
                   <th>Diagnostico gratis</th>
                   <th>Ultimo evento</th>
                 </tr>
               </thead>
               <tbody>
-                {leads.map((lead) => (
-                  <tr key={lead.id}>
-                    <td>
-                      <Link href={`/pessoas/${lead.id}?tab=diagnosticos`} prefetch={false}>{lead.name}</Link>
-                    </td>
-                    <td className="muted">{lead.email}</td>
-                    <td>{lead.hasFreeDiagnostic ? 'Concluido' : 'Nao'}</td>
-                    <td className="muted">{lead.lastEventAt ? formatDateTime(lead.lastEventAt) : formatDateTime(lead.createdAt)}</td>
-                  </tr>
-                ))}
+                {leads.map((lead) => {
+                  const remarketingLead = remarketingByUserId.get(lead.id);
+
+                  return (
+                    <tr key={lead.id}>
+                      <td>
+                        <Link href={`/pessoas/${lead.id}?tab=diagnosticos`} prefetch={false}>{lead.name}</Link>
+                      </td>
+                      <td className="muted">{lead.email}</td>
+                      <td>
+                        {remarketingLead ? (
+                          <span className="pill danger">{remarketingLead.tag}</span>
+                        ) : (
+                          <span className="muted">-</span>
+                        )}
+                      </td>
+                      <td>{lead.hasFreeDiagnostic ? 'Concluido' : 'Nao'}</td>
+                      <td className="muted">{lead.lastEventAt ? formatDateTime(lead.lastEventAt) : formatDateTime(lead.createdAt)}</td>
+                    </tr>
+                  );
+                })}
                 {leads.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="muted">Nenhum lead encontrado.</td>
+                    <td colSpan={5} className="muted">Nenhum lead encontrado.</td>
                   </tr>
                 ) : null}
               </tbody>
