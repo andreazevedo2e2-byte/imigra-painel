@@ -160,7 +160,9 @@ export async function getDashboardData() {
   );
 
   const recommendedVisas = countBy(
-    Array.from(latestFreeByUser.values()).flatMap((row) => normalizeRecommendedVisas(row.recommended_visas))
+    Array.from(latestFreeByUser.values())
+      .map((row) => normalizeRecommendedVisas(row.recommended_visas)[0])
+      .filter(Boolean) as string[]
   );
 
   const reportsByVisa = countBy(reports.map((report) => report.visa_type));

@@ -401,9 +401,8 @@ export async function getAdminSnapshot(periodDays = 30) {
   const recommendedVisas = Array.from(
     latestFreeRows.reduce((map, item) => {
       if (!Array.isArray(item.recommended_visas)) return map;
-      for (const visa of item.recommended_visas) {
-        if (typeof visa === 'string') map.set(visa, (map.get(visa) ?? 0) + 1);
-      }
+      const topVisa = item.recommended_visas.find((visa) => typeof visa === 'string');
+      if (typeof topVisa === 'string') map.set(topVisa, (map.get(topVisa) ?? 0) + 1);
       return map;
     }, new Map<string, number>())
   )

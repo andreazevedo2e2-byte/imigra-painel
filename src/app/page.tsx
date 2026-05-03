@@ -12,9 +12,9 @@ function parsePeriodDays(input: unknown) {
   const raw = typeof input === 'string' ? input.trim() : '';
   if (raw === 'all') return 0;
   const days = Number.parseInt(raw, 10);
-  if (!Number.isFinite(days)) return 1;
+  if (!Number.isFinite(days)) return 30;
   if (days === 1 || days === 7 || days === 30 || days === 90) return days;
-  return 1;
+  return 30;
 }
 
 export default async function DashboardPage({
